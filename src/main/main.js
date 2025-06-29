@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs').promises;
@@ -14,12 +14,14 @@ app.commandLine.appendSwitch('--no-sandbox');
 class SchoolBellApp {
   constructor() {
     this.mainWindow = null;
+    this.tray = null;
     this.dataManager = null;
     this.audioPlayer = null;
     this.scheduler = null;
     this.authManager = null;
     this.isDevelopment = process.argv.includes('--dev');
     this.isInitialized = false;
+    this.isQuitting = false;
     
     // Auto-updater configuration
     this.updateCheckInterval = null;
@@ -244,8 +246,10 @@ class SchoolBellApp {
 
   setupApp() {
     app.whenReady().then(() => {
+      this.createSystemTray();
       this.createMainWindow();
       this.createAppMenu();
+      this.setupAutoLaunch();
       
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -255,12 +259,21 @@ class SchoolBellApp {
     });
 
     app.on('window-all-closed', () => {
+      // Don't quit the app when all windows are closed
+      // Keep running in background via system tray
       if (process.platform !== 'darwin') {
-        app.quit();
+        // On macOS, keep the app running even when no windows are open
+        // On Windows/Linux, keep running in system tray
       }
     });
 
-    app.on('before-quit', async () => {
+    app.on('before-quit', async (event) => {
+      if (!this.isQuitting) {
+        event.preventDefault();
+        this.showQuitConfirmation();
+        return;
+      }
+      
       try {
         // Clear update check interval
         if (this.updateCheckInterval) {
@@ -275,6 +288,327 @@ class SchoolBellApp {
         // Silent cleanup
       }
     });
+  }
+
+  createSystemTray() {
+    try {
+      // Use static tray icon file
+      const trayIconPath = this.isDevelopment 
+        ? path.join(__dirname, '../../build/tray-icon.png')
+        : path.join(process.resourcesPath, 'tray-icon.png');
+      
+      // Check if tray icon exists, fallback to app icon
+      let trayIcon;
+      try {
+        trayIcon = nativeImage.createFromPath(trayIconPath);
+        if (trayIcon.isEmpty()) {
+          throw new Error('Tray icon is empty');
+        }
+      } catch (iconError) {
+        console.warn('Custom tray icon not found, using default icon');
+        // Create a simple 16x16 bell icon programmatically
+        trayIcon = this.createSimpleTrayIcon();
+      }
+      
+      this.tray = new Tray(trayIcon);
+      
+      // Set tray tooltip
+      this.tray.setToolTip('School Bell System - Running in background');
+      
+      // Create tray context menu
+      this.updateTrayMenu();
+      
+      // Double click to show/hide main window
+      this.tray.on('double-click', () => {
+        this.toggleMainWindow();
+      });
+      
+      console.log('System tray created successfully');
+      
+    } catch (error) {
+      console.warn('Failed to create system tray:', error.message);
+      // App can still function without tray
+    }
+  }
+
+  createSimpleTrayIcon() {
+    // Create a simple programmatic icon as fallback
+    // 16x16 bitmap with bell pattern
+    const iconData = Buffer.from([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0xF3, 0xFF,
+      0x61, 0x00, 0x00, 0x00, 0x4A, 0x49, 0x44, 0x41, 0x54, 0x38, 0x8D, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
+      0x03, 0x3A, 0x00, 0xE4, 0xFF, 0xFF, 0xFF, 0x87, 0x01, 0x08, 0x18, 0x19, 0x19, 0xF9, 0x87, 0x81,
+      0x81, 0x81, 0x09, 0x03, 0x03, 0x03, 0x7F, 0x86, 0x86, 0x86, 0x06, 0x06, 0x06, 0x06, 0x86, 0x87,
+      0x87, 0x87, 0x97, 0x91, 0x91, 0x91, 0x1F, 0x1C, 0x1C, 0x1C, 0xFC, 0x1D, 0x1D, 0x1D, 0x1D, 0x00,
+      0x44, 0x32, 0x32, 0x32, 0x72, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60,
+      0x82
+    ]);
+    
+    return nativeImage.createFromBuffer(iconData);
+  }
+
+  updateTrayMenu() {
+    if (!this.tray) return;
+    
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'School Bell System',
+        type: 'normal',
+        enabled: false
+      },
+      { type: 'separator' },
+      {
+        label: 'Show Window',
+        click: () => this.showMainWindow()
+      },
+      {
+        label: 'Hide Window', 
+        click: () => this.hideMainWindow()
+      },
+      { type: 'separator' },
+      {
+        label: 'Next Events',
+        submenu: this.createNextEventsSubmenu()
+      },
+      {
+        label: 'Quick Actions',
+        submenu: [
+          {
+            label: 'Stop All Audio',
+            click: async () => {
+              if (this.audioPlayer) {
+                await this.audioPlayer.stop();
+                this.showTrayNotification('Audio Stopped', 'All audio playback stopped');
+              }
+            }
+          },
+          {
+            label: 'Reload Schedules',
+            click: async () => {
+              if (this.scheduler) {
+                await this.scheduler.reloadSchedules();
+                this.showTrayNotification('Schedules Reloaded', 'All schedules have been reloaded');
+              }
+            }
+          }
+        ]
+      },
+      { type: 'separator' },
+      {
+        label: 'Settings',
+        submenu: [
+          {
+            label: 'Start with Windows',
+            type: 'checkbox',
+            checked: this.getAutoLaunchStatus(),
+            click: (menuItem) => this.toggleAutoLaunch(menuItem.checked)
+          },
+          {
+            label: 'Run in Background',
+            type: 'checkbox',
+            checked: true,
+            enabled: false // Always enabled for bell system
+          }
+        ]
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit School Bell System',
+        click: () => this.confirmQuit()
+      }
+    ]);
+    
+    this.tray.setContextMenu(contextMenu);
+  }
+
+  createNextEventsSubmenu() {
+    try {
+      if (!this.scheduler) {
+        return [{ label: 'No events scheduled', enabled: false }];
+      }
+      
+      const nextEvents = this.scheduler.getNextEvents(3);
+      
+      if (nextEvents.length === 0) {
+        return [{ label: 'No upcoming events', enabled: false }];
+      }
+      
+      return nextEvents.map(event => ({
+        label: `${event.name} - ${event.time} (${this.formatTimeUntil(event.timeUntil)})`,
+        enabled: false
+      }));
+      
+    } catch (error) {
+      return [{ label: 'Error loading events', enabled: false }];
+    }
+  }
+
+  formatTimeUntil(seconds) {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m`;
+    } else if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    } else {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+    }
+  }
+
+  showTrayNotification(title, body) {
+    if (this.tray) {
+      this.tray.displayBalloon({
+        title: title,
+        content: body,
+        icon: this.tray.getImage()
+      });
+    }
+  }
+
+  toggleMainWindow() {
+    if (this.mainWindow) {
+      if (this.mainWindow.isVisible()) {
+        this.hideMainWindow();
+      } else {
+        this.showMainWindow();
+      }
+    } else {
+      this.createMainWindow();
+    }
+  }
+
+  showMainWindow() {
+    if (this.mainWindow) {
+      this.mainWindow.show();
+      this.mainWindow.focus();
+    } else {
+      this.createMainWindow();
+    }
+  }
+
+  hideMainWindow() {
+    if (this.mainWindow) {
+      this.mainWindow.hide();
+    }
+  }
+
+  async setupAutoLaunch() {
+    try {
+      const AutoLaunch = require('auto-launch');
+      
+      this.autoLauncher = new AutoLaunch({
+        name: 'School Bell System',
+        path: app.getPath('exe'),
+        isHidden: false // Set to true to start minimized
+      });
+      
+      // Check if auto-launch is already enabled
+      const isEnabled = await this.autoLauncher.isEnabled();
+      console.log('Auto-launch status:', isEnabled);
+      
+      // Enable auto-launch by default for bell system
+      const settings = this.dataManager?.getSettings();
+      if (settings?.autoStart !== false && !isEnabled) {
+        await this.enableAutoLaunch();
+      }
+      
+    } catch (error) {
+      console.warn('Auto-launch setup failed:', error.message);
+      // App can still function without auto-launch
+    }
+  }
+
+  async enableAutoLaunch() {
+    try {
+      if (this.autoLauncher) {
+        await this.autoLauncher.enable();
+        console.log('Auto-launch enabled');
+        this.showTrayNotification('Auto-Start Enabled', 'School Bell System will start with Windows');
+      }
+    } catch (error) {
+      console.error('Failed to enable auto-launch:', error);
+    }
+  }
+
+  async disableAutoLaunch() {
+    try {
+      if (this.autoLauncher) {
+        await this.autoLauncher.disable();
+        console.log('Auto-launch disabled');
+        this.showTrayNotification('Auto-Start Disabled', 'School Bell System will not start with Windows');
+      }
+    } catch (error) {
+      console.error('Failed to disable auto-launch:', error);
+    }
+  }
+
+  getAutoLaunchStatus() {
+    try {
+      if (this.autoLauncher) {
+        return this.autoLauncher.isEnabled();
+      }
+    } catch (error) {
+      console.warn('Failed to get auto-launch status:', error);
+    }
+    return false;
+  }
+
+  async toggleAutoLaunch(enable) {
+    if (enable) {
+      await this.enableAutoLaunch();
+    } else {
+      await this.disableAutoLaunch();
+    }
+    
+    // Update settings
+    if (this.dataManager) {
+      await this.dataManager.updateSettings({ autoStart: enable });
+    }
+    
+    // Update tray menu
+    this.updateTrayMenu();
+  }
+
+  showQuitConfirmation() {
+    const options = {
+      type: 'question',
+      title: 'Quit School Bell System',
+      message: 'Are you sure you want to quit School Bell System?',
+      detail: 'Quitting will stop all scheduled bell events until you restart the application.',
+      buttons: ['Cancel', 'Minimize to Tray', 'Quit Completely'],
+      defaultId: 1,
+      cancelId: 0
+    };
+
+    dialog.showMessageBox(this.mainWindow, options).then((result) => {
+      switch (result.response) {
+        case 0: // Cancel
+          break;
+        case 1: // Minimize to Tray
+          this.hideMainWindow();
+          this.showTrayNotification('Running in Background', 'School Bell System is still running in the system tray');
+          break;
+        case 2: // Quit Completely
+          this.confirmQuit();
+          break;
+      }
+    });
+  }
+
+  confirmQuit() {
+    this.isQuitting = true;
+    
+    if (this.tray) {
+      this.tray.destroy();
+    }
+    
+    app.quit();
   }
 
   handleSessionExpired() {
@@ -313,6 +647,23 @@ class SchoolBellApp {
       this.mainWindow.setTitle(`School Bell System v${currentVersion}`);
     });
 
+    // Handle window close - minimize to tray instead of quitting
+    this.mainWindow.on('close', (event) => {
+      if (!this.isQuitting) {
+        event.preventDefault();
+        this.hideMainWindow();
+        
+        // Show notification on first minimize
+        if (!this.hasShownTrayNotification) {
+          this.showTrayNotification(
+            'School Bell System', 
+            'App minimized to system tray. Double-click the tray icon to restore.'
+          );
+          this.hasShownTrayNotification = true;
+        }
+      }
+    });
+
     this.mainWindow.on('closed', () => {
       this.mainWindow = null;
     });
@@ -345,9 +696,14 @@ class SchoolBellApp {
           },
           { type: 'separator' },
           {
+            label: 'Hide to Tray',
+            accelerator: 'CmdOrCtrl+H',
+            click: () => this.hideMainWindow()
+          },
+          {
             label: 'Exit',
             accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
-            click: () => app.quit()
+            click: () => this.showQuitConfirmation()
           }
         ]
       },
@@ -382,6 +738,23 @@ class SchoolBellApp {
             label: 'Weekly View',
             accelerator: 'CmdOrCtrl+W',
             click: () => this.sendMenuAction('weekly-view')
+          }
+        ]
+      },
+      {
+        label: 'System',
+        submenu: [
+          {
+            label: 'Start with Windows',
+            type: 'checkbox',
+            checked: this.getAutoLaunchStatus(),
+            click: (menuItem) => this.toggleAutoLaunch(menuItem.checked)
+          },
+          {
+            label: 'Show in System Tray',
+            type: 'checkbox',
+            checked: true,
+            enabled: false
           }
         ]
       },
@@ -855,6 +1228,31 @@ class SchoolBellApp {
     ipcMain.handle('updater-restart-app', async () => {
       app.relaunch();
       app.quit();
+      return { success: true };
+    });
+
+    // SYSTEM TRAY AND STARTUP IPC HANDLERS
+    ipcMain.handle('system-get-auto-launch-status', async () => {
+      return this.getAutoLaunchStatus();
+    });
+
+    ipcMain.handle('system-toggle-auto-launch', async (event, enable) => {
+      await this.toggleAutoLaunch(enable);
+      return { success: true, enabled: enable };
+    });
+
+    ipcMain.handle('system-show-main-window', async () => {
+      this.showMainWindow();
+      return { success: true };
+    });
+
+    ipcMain.handle('system-hide-main-window', async () => {
+      this.hideMainWindow();
+      return { success: true };
+    });
+
+    ipcMain.handle('system-quit-app', async () => {
+      this.confirmQuit();
       return { success: true };
     });
   }

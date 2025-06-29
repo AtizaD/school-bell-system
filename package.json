@@ -41,6 +41,7 @@
     "clean": "rimraf dist node_modules package-lock.json && npm install"
   },
   "dependencies": {
+    "auto-launch": "^5.0.6",
     "bcryptjs": "^3.0.2",
     "electron-updater": "^6.1.7",
     "node-cron": "^4.1.1",
@@ -71,6 +72,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/tray-icon.png",
+        "to": "tray-icon.png"
       }
     ],
     "win": {
@@ -82,6 +87,7 @@
           ]
         }
       ],
+      "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": false
     },
     "mac": {
@@ -94,6 +100,7 @@
           ]
         }
       ],
+      "icon": "build/icon.icns",
       "category": "public.app-category.education"
     },
     "linux": {
@@ -111,6 +118,7 @@
           ]
         }
       ],
+      "icon": "build/icon.png",
       "category": "Education"
     },
     "nsis": {
