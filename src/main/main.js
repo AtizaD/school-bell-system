@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs').promises;
 const DataManager = require('./data-manager');
@@ -19,6 +20,187 @@ class SchoolBellApp {
     this.authManager = null;
     this.isDevelopment = process.argv.includes('--dev');
     this.isInitialized = false;
+    
+    // Auto-updater configuration
+    this.updateCheckInterval = null;
+    this.updateAvailable = false;
+    
+    // Configure auto-updater
+    this.configureAutoUpdater();
+  }
+
+  configureAutoUpdater() {
+    // Configure auto-updater settings
+    autoUpdater.autoDownload = false; // Don't auto-download, ask user first
+    autoUpdater.autoInstallOnAppQuit = true;
+    
+    // Set update check interval (check every 4 hours)
+    if (!this.isDevelopment) {
+      this.updateCheckInterval = setInterval(() => {
+        this.checkForUpdates(false); // Silent check
+      }, 4 * 60 * 60 * 1000); // 4 hours
+    }
+
+    // Auto-updater event handlers
+    autoUpdater.on('checking-for-update', () => {
+      console.log('Checking for updates...');
+      this.sendUpdateStatus('checking', 'Checking for updates...');
+    });
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info.version);
+      this.updateAvailable = true;
+      this.sendUpdateStatus('available', `Update ${info.version} is available`, info);
+      this.showUpdateAvailableDialog(info);
+    });
+
+    autoUpdater.on('update-not-available', (info) => {
+      console.log('Update not available');
+      this.updateAvailable = false;
+      this.sendUpdateStatus('not-available', 'You are using the latest version');
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err);
+      this.sendUpdateStatus('error', `Update error: ${err.message}`);
+    });
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      const { bytesPerSecond, percent, transferred, total } = progressObj;
+      const message = `Download speed: ${Math.round(bytesPerSecond / 1024)} KB/s - Downloaded ${Math.round(percent)}% (${Math.round(transferred / 1024 / 1024)}MB/${Math.round(total / 1024 / 1024)}MB)`;
+      console.log(message);
+      this.sendUpdateStatus('downloading', message, { percent, bytesPerSecond, transferred, total });
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('Update downloaded:', info.version);
+      this.sendUpdateStatus('downloaded', `Update ${info.version} downloaded and ready to install`);
+      this.showUpdateReadyDialog(info);
+    });
+  }
+
+  async checkForUpdates(showNoUpdateDialog = true) {
+    if (this.isDevelopment) {
+      if (showNoUpdateDialog) {
+        this.showUpdateDialog('Development Mode', 'Update checking is disabled in development mode.');
+      }
+      return;
+    }
+
+    try {
+      console.log('Manually checking for updates...');
+      this.sendUpdateStatus('checking', 'Checking for updates...');
+      
+      const result = await autoUpdater.checkForUpdates();
+      
+      if (showNoUpdateDialog && !this.updateAvailable) {
+        setTimeout(() => {
+          if (!this.updateAvailable) {
+            this.showUpdateDialog('No Updates', 'You are already using the latest version of School Bell System.');
+          }
+        }, 3000); // Wait 3 seconds to see if update is found
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Manual update check failed:', error);
+      this.sendUpdateStatus('error', `Update check failed: ${error.message}`);
+      
+      if (showNoUpdateDialog) {
+        this.showUpdateDialog('Update Check Failed', `Failed to check for updates: ${error.message}`);
+      }
+    }
+  }
+
+  showUpdateAvailableDialog(info) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    const options = {
+      type: 'info',
+      title: 'Update Available',
+      message: `School Bell System ${info.version} is available`,
+      detail: `Current version: ${app.getVersion()}\nNew version: ${info.version}\n\nRelease date: ${new Date(info.releaseDate).toLocaleDateString()}\n\nWould you like to download and install this update?`,
+      buttons: ['Download Now', 'Download Later', 'View Release Notes'],
+      defaultId: 0,
+      cancelId: 1
+    };
+
+    dialog.showMessageBox(this.mainWindow, options).then((result) => {
+      switch (result.response) {
+        case 0: // Download Now
+          this.downloadUpdate();
+          break;
+        case 1: // Download Later
+          this.sendUpdateStatus('postponed', 'Update postponed');
+          break;
+        case 2: // View Release Notes
+          shell.openExternal(`https://github.com/AtizaD/school-bell-system/releases/tag/v${info.version}`);
+          break;
+      }
+    });
+  }
+
+  showUpdateReadyDialog(info) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    const options = {
+      type: 'info',
+      title: 'Update Ready',
+      message: `School Bell System ${info.version} is ready to install`,
+      detail: 'The update has been downloaded and is ready to install. The application will restart to complete the installation.',
+      buttons: ['Install and Restart', 'Install on Exit'],
+      defaultId: 0,
+      cancelId: 1
+    };
+
+    dialog.showMessageBox(this.mainWindow, options).then((result) => {
+      if (result.response === 0) {
+        // Install and restart immediately
+        this.installUpdate();
+      } else {
+        // Install on exit (this is automatic with autoInstallOnAppQuit = true)
+        this.sendUpdateStatus('ready', 'Update will be installed when you close the application');
+      }
+    });
+  }
+
+  showUpdateDialog(title, message) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    dialog.showMessageBox(this.mainWindow, {
+      type: 'info',
+      title: title,
+      message: message,
+      buttons: ['OK']
+    });
+  }
+
+  downloadUpdate() {
+    try {
+      console.log('Starting update download...');
+      this.sendUpdateStatus('downloading', 'Downloading update...');
+      autoUpdater.downloadUpdate();
+    } catch (error) {
+      console.error('Failed to download update:', error);
+      this.sendUpdateStatus('error', `Download failed: ${error.message}`);
+    }
+  }
+
+  installUpdate() {
+    try {
+      console.log('Installing update and restarting...');
+      this.sendUpdateStatus('installing', 'Installing update and restarting...');
+      autoUpdater.quitAndInstall(false, true); // Don't force close, do restart
+    } catch (error) {
+      console.error('Failed to install update:', error);
+      this.sendUpdateStatus('error', `Installation failed: ${error.message}`);
+    }
+  }
+
+  sendUpdateStatus(status, message, data = null) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('update-status', { status, message, data });
+    }
   }
 
   async initialize() {
@@ -45,6 +227,13 @@ class SchoolBellApp {
       this.setupIPC();
       
       this.isInitialized = true;
+      
+      // Check for updates on startup (after 5 seconds delay)
+      setTimeout(() => {
+        if (!this.isDevelopment) {
+          this.checkForUpdates(false); // Silent check on startup
+        }
+      }, 5000);
       
     } catch (error) {
       dialog.showErrorBox('Initialization Error', 
@@ -73,6 +262,11 @@ class SchoolBellApp {
 
     app.on('before-quit', async () => {
       try {
+        // Clear update check interval
+        if (this.updateCheckInterval) {
+          clearInterval(this.updateCheckInterval);
+        }
+        
         if (this.audioPlayer) await this.audioPlayer.cleanup();
         if (this.scheduler) this.scheduler.stop();
         if (this.authManager) this.authManager.cleanup();
@@ -113,6 +307,10 @@ class SchoolBellApp {
 
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow.show();
+      
+      // Show app version in title
+      const currentVersion = app.getVersion();
+      this.mainWindow.setTitle(`School Bell System v${currentVersion}`);
     });
 
     this.mainWindow.on('closed', () => {
@@ -186,6 +384,71 @@ class SchoolBellApp {
             click: () => this.sendMenuAction('weekly-view')
           }
         ]
+      },
+      {
+        label: 'Help',
+        submenu: [
+          {
+            label: 'Check for Updates',
+            click: () => this.checkForUpdates(true)
+          },
+          { type: 'separator' },
+          {
+            label: 'User Guide',
+            click: () => {
+              shell.openExternal('https://github.com/AtizaD/school-bell-system#readme');
+            }
+          },
+          {
+            label: 'Report Issue',
+            click: () => {
+              shell.openExternal('https://github.com/AtizaD/school-bell-system/issues');
+            }
+          },
+          {
+            label: 'View on GitHub',
+            click: () => {
+              shell.openExternal('https://github.com/AtizaD/school-bell-system');
+            }
+          },
+          { type: 'separator' },
+          {
+            label: 'About School Bell System',
+            click: () => {
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                const appVersion = app.getVersion();
+                const electronVersion = process.versions.electron;
+                const nodeVersion = process.versions.node;
+                const chromeVersion = process.versions.chrome;
+                const platform = process.platform;
+                const arch = process.arch;
+                
+                dialog.showMessageBox(this.mainWindow, {
+                  type: 'info',
+                  title: 'About School Bell System',
+                  message: 'School Bell Management System',
+                  detail: `Version: ${appVersion}\n` +
+                         `Build: ${this.isDevelopment ? 'Development' : 'Production'}\n` +
+                         `Platform: ${platform} (${arch})\n\n` +
+                         `Runtime Information:\n` +
+                         `• Electron: ${electronVersion}\n` +
+                         `• Node.js: ${nodeVersion}\n` +
+                         `• Chrome: ${chromeVersion}\n\n` +
+                         `Automated school bell scheduling system with audio playback control.\n\n` +
+                         `© 2025 AtizaD\n` +
+                         `Licensed under MIT License\n\n` +
+                         `GitHub: https://github.com/AtizaD/school-bell-system`,
+                  buttons: ['OK', 'Visit GitHub'],
+                  defaultId: 0
+                }).then((result) => {
+                  if (result.response === 1) {
+                    shell.openExternal('https://github.com/AtizaD/school-bell-system');
+                  }
+                });
+              }
+            }
+          }
+        ]
       }
     ];
 
@@ -223,6 +486,10 @@ class SchoolBellApp {
           },
           { type: 'separator' },
           {
+            label: 'Test Update Check',
+            click: () => this.checkForUpdates(true)
+          },
+          {
             label: 'Reset App Data',
             click: async () => {
               const result = await dialog.showMessageBox(this.mainWindow, {
@@ -256,48 +523,6 @@ class SchoolBellApp {
         ]
       });
     }
-
-    template.push({
-      label: 'Help',
-      submenu: [
-        {
-          label: 'User Guide',
-          click: () => {
-            shell.openExternal('https://github.com');
-          }
-        },
-        {
-          label: 'About School Bell System',
-          click: () => {
-            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-              const appVersion = app.getVersion();
-              const electronVersion = process.versions.electron;
-              const nodeVersion = process.versions.node;
-              const chromeVersion = process.versions.chrome;
-              const platform = process.platform;
-              const arch = process.arch;
-              
-              dialog.showMessageBox(this.mainWindow, {
-                type: 'info',
-                title: 'About School Bell System',
-                message: 'School Bell Management System',
-                detail: `Version: ${appVersion}\n` +
-                       `Build: Production\n` +
-                       `Platform: ${platform} (${arch})\n\n` +
-                       `Runtime Information:\n` +
-                       `• Electron: ${electronVersion}\n` +
-                       `• Node.js: ${nodeVersion}\n` +
-                       `• Chrome: ${chromeVersion}\n\n` +
-                       `Automated school bell scheduling system with audio playback control.\n\n` +
-                       `© 2025 School Bell System\n` +
-                       `Licensed under MIT License`,
-                buttons: ['OK']
-              });
-            }
-          }
-        }
-      ]
-    });
 
     if (process.platform === 'darwin') {
       template.unshift({
@@ -336,6 +561,7 @@ class SchoolBellApp {
   }
 
   setupIPC() {
+    // Existing IPC handlers...
     ipcMain.handle('data-get', async (event, section) => {
       return this.dataManager.getData(section);
     });
@@ -582,7 +808,7 @@ class SchoolBellApp {
       }
     });
 
-    // FIXED: Password recovery handlers moved INSIDE setupIPC()
+    // Password recovery handlers
     ipcMain.handle('auth-generate-recovery-token', async () => {
       return await this.authManager.generateRecoveryToken();
     });
@@ -601,6 +827,35 @@ class SchoolBellApp {
 
     ipcMain.handle('auth-emergency-login', async (event, emergencyCode) => {
       return await this.authManager.emergencyLogin(emergencyCode);
+    });
+
+    // AUTO-UPDATER IPC HANDLERS
+    ipcMain.handle('updater-check-for-updates', async () => {
+      return await this.checkForUpdates(true);
+    });
+
+    ipcMain.handle('updater-download-update', async () => {
+      this.downloadUpdate();
+      return { success: true };
+    });
+
+    ipcMain.handle('updater-install-update', async () => {
+      this.installUpdate();
+      return { success: true };
+    });
+
+    ipcMain.handle('updater-get-version', async () => {
+      return {
+        current: app.getVersion(),
+        isDevelopment: this.isDevelopment,
+        updateAvailable: this.updateAvailable
+      };
+    });
+
+    ipcMain.handle('updater-restart-app', async () => {
+      app.relaunch();
+      app.quit();
+      return { success: true };
     });
   }
 
