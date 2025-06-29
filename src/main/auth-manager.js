@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs'); // Changed from 'bcrypt' to 'bcryptjs'
 const { machineIdSync } = require('node-machine-id');
 const { app } = require('electron');
 
@@ -214,8 +214,8 @@ class AuthManager {
         throw new Error('Admin user already exists');
       }
 
-      // Hash password
-      const passwordHash = await bcrypt.hash(password, this.saltRounds);
+      // Hash password using bcryptjs (synchronous method)
+      const passwordHash = bcrypt.hashSync(password, this.saltRounds);
 
       // Create auth data
       const authData = {
@@ -235,7 +235,7 @@ class AuthManager {
       // Save encrypted
       await this.saveAuthData(authData);
 
-      console.log('Admin user created successfully with new encryption');
+      console.log('Admin user created successfully with bcryptjs');
 
       return {
         success: true,
@@ -272,8 +272,8 @@ class AuthManager {
         throw new Error('Invalid username or password');
       }
 
-      // Check password
-      const passwordMatch = await bcrypt.compare(password, adminUser.passwordHash);
+      // Check password using bcryptjs (synchronous method)
+      const passwordMatch = bcrypt.compareSync(password, adminUser.passwordHash);
       if (!passwordMatch) {
         console.error('Password does not match');
         throw new Error('Invalid username or password');
@@ -409,8 +409,8 @@ class AuthManager {
       const authData = await this.loadAuthData();
       const adminUser = authData.auth.adminUser;
 
-      // Verify current password
-      const passwordMatch = await bcrypt.compare(currentPassword, adminUser.passwordHash);
+      // Verify current password using bcryptjs (synchronous method)
+      const passwordMatch = bcrypt.compareSync(currentPassword, adminUser.passwordHash);
       if (!passwordMatch) {
         throw new Error('Current password is incorrect');
       }
@@ -424,8 +424,8 @@ class AuthManager {
         throw new Error('New password must contain at least one number');
       }
 
-      // Hash new password
-      const newPasswordHash = await bcrypt.hash(newPassword, this.saltRounds);
+      // Hash new password using bcryptjs (synchronous method)
+      const newPasswordHash = bcrypt.hashSync(newPassword, this.saltRounds);
 
       // Update auth data
       adminUser.passwordHash = newPasswordHash;

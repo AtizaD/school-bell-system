@@ -1,113 +1,135 @@
 {
   "name": "school-bell-system",
   "version": "1.0.0",
-  "description": "Desktop application for managing school bell schedules and audio announcements",
+  "description": "Automated school bell scheduling system with audio playback and authentication",
   "main": "src/main/main.js",
+  "homepage": "https://github.com/AtizaD/school-bell-system",
   "author": {
-    "name": "Francis Quayson",
-    "email": "quaysonfrancis14@gmail.com"
+    "name": "AtizaD",
+    "email": "veratechgh1@gmail.com",
+    "url": "https://github.com/AtizaD"
   },
-
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AtizaD/school-bell-system.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AtizaD/school-bell-system/issues"
+  },
+  "keywords": [
+    "school",
+    "bell",
+    "scheduler",
+    "electron",
+    "audio",
+    "automation",
+    "education",
+    "desktop-app"
+  ],
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev --disable-gpu-sandbox --no-sandbox",
-    "build": "electron-builder --win",
-    "build-win": "electron-builder --win",
-    "build-x64": "electron-builder --win --x64",
-    "build-ia32": "electron-builder --win --ia32",
-    "build-portable": "electron-builder --win portable",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
     "dist": "npm run build",
     "pack": "electron-builder --dir",
-    "clean": "rm -rf dist/",
-    "test": "echo \"No tests specified yet\" && exit 0",
-    "debug": "electron . --dev --enable-logging --remote-debugging-port=9222",
-    "postinstall": "electron-builder install-app-deps"
-  },
-  "keywords": [
-    "electron",
-    "school",
-    "bell",
-    "schedule",
-    "audio",
-    "automation",
-    "education"
-  ],
-  "license": "MIT",
-  "devDependencies": {
-    "electron": "^27.0.0",
-    "electron-builder": "^24.6.4"
+    "postinstall": "electron-builder install-app-deps",
+    "release": "electron-builder --publish=always",
+    "clean": "rimraf dist node_modules package-lock.json && npm install"
   },
   "dependencies": {
-    "electron-auto-launch": "^5.0.7",
-    "node-cron": "^3.0.2",
-    "bcrypt": "^5.1.0",
+    "bcryptjs": "^3.0.2",
+    "electron-updater": "^6.1.7",
+    "node-cron": "^4.1.1",
     "node-machine-id": "^1.1.12"
   },
+  "devDependencies": {
+    "electron": "^37.1.0",
+    "electron-builder": "^26.0.12",
+    "rimraf": "^6.0.1"
+  },
   "build": {
-    "appId": "com.schoolbell.system",
+    "appId": "com.atizad.school-bell-system",
     "productName": "School Bell System",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "copyright": "Copyright © 2025 AtizaD",
     "directories": {
-      "output": "dist/",
-      "buildResources": "build/"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "src/**/*",
-      "audio/**/*",
-      "package.json",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/*.d.ts",
-      "!**/node_modules/.bin",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.editorconfig",
-      "!**/._*",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      "node_modules/**/*",
+      "package.json"
     ],
-    "extraFiles": [
+    "extraResources": [
       {
         "from": "audio",
         "to": "audio",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "build/icons/icon.ico",
-      "publisherName": "School Bell System",
-      "verifyUpdateCodeSignature": false,
-      "requestedExecutionLevel": "asInvoker"
+      "verifyUpdateCodeSignature": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.education"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Education"
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
-      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icons/icon.ico",
-      "uninstallerIcon": "build/icons/icon.ico",
-      "installerHeaderIcon": "build/icons/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "School Bell System",
-      "include": "build/installer.nsh",
-      "license": "build/license.txt"
+      "shortcutName": "School Bell System"
     },
-    "directories": {
-      "output": "dist"
-    },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "AtizaD",
+      "repo": "school-bell-system",
+      "private": false,
+      "releaseType": "release"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
-
 }
