@@ -1,0 +1,38 @@
+﻿# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+out/
+
+# User data files
+auth-data.enc
+school-bell-data.json
+school-bell-backup.json
+*.enc
+
+# Audio files (comment out if you want to include them)
+audio/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local

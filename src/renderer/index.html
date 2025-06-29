@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Bell Management System</title>
+    
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' data:;">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-content">
+            <div class="header-left">
+                <h1 class="app-title">
+                    <span class="app-icon">🔔</span>
+                    School Bell System
+                </h1>
+            </div>
+            <div class="header-right">
+                <div class="next-event-header" id="nextEventHeader">
+                    <span class="next-event-label">Next Event:</span>
+                    <span class="next-event-info" id="nextEventInfo">No upcoming events</span>
+                </div>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Ready</span>
+                </div>
+                <div class="current-time" id="currentTime">
+                    --:--:--
+                </div>
+                <button class="logout-btn" id="logoutBtn" onclick="app.logout()" title="Logout">
+                    <span class="logout-icon">🚪</span>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <nav class="app-nav">
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard">
+                <span class="tab-icon">📊</span>
+                Dashboard
+            </button>
+            <button class="nav-tab" data-tab="schedule">
+                <span class="tab-icon">📅</span>
+                Weekly Schedule
+            </button>
+            <button class="nav-tab" data-tab="audio">
+                <span class="tab-icon">🎵</span>
+                Audio Library
+            </button>
+            <button class="nav-tab" data-tab="templates">
+                <span class="tab-icon">📋</span>
+                Templates
+            </button>
+            <button class="nav-tab" data-tab="logs">
+                <span class="tab-icon">📝</span>
+                Activity Log
+            </button>
+            <button class="nav-tab" data-tab="settings">
+                <span class="tab-icon">⚙️</span>
+                Settings
+            </button>
+        </div>
+    </nav>
+
+    <main class="app-main">
+        
+        <section class="tab-content active" id="dashboard">
+            <div class="dashboard-container">
+                <div class="dashboard-header">
+                    <h2>Dashboard</h2>
+                    <div class="dashboard-actions">
+                        <button class="btn btn-primary" id="addEventBtn">
+                            <span class="btn-icon">➕</span>
+                            Add Event
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <h3>Today's Schedule</h3>
+                            <span class="card-badge" id="todayBadge">0 events</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="schedule-preview" id="todaySchedule">
+                                <div class="empty-state">
+                                    <span class="empty-icon">📅</span>
+                                    <p>No events scheduled for today</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <h3>System Status</h3>
+                        </div>
+                        <div class="card-content">
+                            <div class="status-grid">
+                                <div class="status-item">
+                                    <span class="status-label">Templates</span>
+                                    <span class="status-value" id="templateCount">0</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Total Events</span>
+                                    <span class="status-value" id="totalEvents">0</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">System Volume</span>
+                                    <span class="status-value" id="systemVolume">80%</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Scheduler</span>
+                                    <span class="status-value" id="schedulerStatus">Ready</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <h3>Next Scheduled Event</h3>
+                            <span class="card-badge" id="nextEventBadge">Upcoming</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="next-event-display" id="nextEventDisplay">
+                                <div class="empty-state">
+                                    <span class="empty-icon">⏰</span>
+                                    <p>No upcoming events scheduled</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content" id="schedule">
+            <div class="schedule-container">
+                <div class="schedule-header">
+                    <h2>Weekly Schedule</h2>
+                    <div class="schedule-actions">
+                        <button class="btn btn-secondary" id="applyTemplateBtn">
+                            <span class="btn-icon">📋</span>
+                            Apply Template
+                        </button>
+                        <button class="btn btn-primary" id="addScheduleEventBtn">
+                            <span class="btn-icon">➕</span>
+                            Add Event
+                        </button>
+                    </div>
+                </div>
+
+                <div class="day-tabs">
+                    <button class="day-tab active" data-day="monday">Monday</button>
+                    <button class="day-tab" data-day="tuesday">Tuesday</button>
+                    <button class="day-tab" data-day="wednesday">Wednesday</button>
+                    <button class="day-tab" data-day="thursday">Thursday</button>
+                    <button class="day-tab" data-day="friday">Friday</button>
+                    <button class="day-tab" data-day="saturday">Saturday</button>
+                    <button class="day-tab" data-day="sunday">Sunday</button>
+                </div>
+
+                <div class="schedule-content">
+                    <div class="schedule-day" id="scheduleDay">
+                        <div class="empty-state">
+                            <span class="empty-icon">📅</span>
+                            <p>No events scheduled for this day</p>
+                            <button class="btn btn-outline" id="addFirstEventBtn">Add First Event</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content" id="audio">
+            <div class="audio-container">
+                <div class="audio-header">
+                    <h2>Audio Library</h2>
+                    <div class="audio-actions">
+                        <button class="btn btn-primary" id="uploadAudioBtn">
+                            <span class="btn-icon">⬆️</span>
+                            Upload Audio
+                        </button>
+                    </div>
+                </div>
+
+                <div class="audio-content">
+                    <div class="audio-grid" id="audioGrid">
+                        <div class="empty-state">
+                            <span class="empty-icon">🎵</span>
+                            <p>No audio files uploaded yet</p>
+                            <button class="btn btn-outline" id="uploadFirstAudioBtn">Upload First Audio</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content" id="templates">
+            <div class="templates-container">
+                <div class="templates-header">
+                    <h2>Schedule Templates</h2>
+                    <div class="templates-actions">
+                        <button class="btn btn-primary" id="createTemplateBtn">
+                            <span class="btn-icon">➕</span>
+                            Create Template
+                        </button>
+                    </div>
+                </div>
+
+                <div class="templates-content">
+                    <div class="templates-grid" id="templatesGrid">
+                        <div class="empty-state">
+                            <span class="empty-icon">📋</span>
+                            <p>No templates created yet</p>
+                            <button class="btn btn-outline" id="createFirstTemplateBtn">Create First Template</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content" id="logs">
+            <div class="logs-container">
+                <div class="logs-header">
+                    <h2>Activity Log</h2>
+                    <div class="logs-actions">
+                        <button class="btn btn-secondary" id="clearLogsBtn">
+                            <span class="btn-icon">🗑️</span>
+                            Clear Logs
+                        </button>
+                        <button class="btn btn-secondary" id="exportLogsBtn">
+                            <span class="btn-icon">💾</span>
+                            Export Logs
+                        </button>
+                    </div>
+                </div>
+
+                <div class="logs-content">
+                    <div class="logs-list" id="logsList">
+                        <div class="empty-state">
+                            <span class="empty-icon">📝</span>
+                            <p>No activity logged yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content" id="settings">
+            <div class="settings-container">
+                <div class="settings-header">
+                    <h2>Settings</h2>
+                </div>
+
+                <div class="settings-content">
+                    <div class="settings-groups">
+                        <div class="settings-group">
+                            <h3>Audio Settings</h3>
+                            <div class="setting-item">
+                                <label for="volumeSlider">System Volume</label>
+                                <div class="volume-control">
+                                    <input type="range" id="volumeSlider" min="0" max="100" value="80">
+                                    <span id="volumeValue">80%</span>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <label for="audioPath">Audio Files Path</label>
+                                <div class="path-control">
+                                    <input type="text" id="audioPath" readonly>
+                                    <button class="btn btn-outline" id="changePathBtn">Change</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <h3>Application Settings</h3>
+                            <div class="setting-item">
+                                <label>
+                                    <input type="checkbox" id="autoStartCheckbox">
+                                    Start automatically with system
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <label for="logLevel">Log Level</label>
+                                <select id="logLevel">
+                                    <option value="error">Error</option>
+                                    <option value="warn">Warning</option>
+                                    <option value="info" selected>Info</option>
+                                    <option value="debug">Debug</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label for="maxLogEntries">Maximum Log Entries</label>
+                                <input type="number" id="maxLogEntries" min="100" max="10000" value="1000">
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <h3>Data Management</h3>
+                            <div class="setting-actions">
+                                <button class="btn btn-outline" id="exportDataBtn">
+                                    <span class="btn-icon">💾</span>
+                                    Export All Data
+                                </button>
+                                <button class="btn btn-outline" id="importDataBtn">
+                                    <span class="btn-icon">📁</span>
+                                    Import Data
+                                </button>
+                                <button class="btn btn-danger" id="resetDataBtn">
+                                    <span class="btn-icon">⚠️</span>
+                                    Reset All Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Modal Title</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn btn-secondary" id="modalCancel">Cancel</button>
+                <button class="btn btn-primary" id="modalConfirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/schedule.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/templates.js"></script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+{
+  "name": "school-bell-system",
+  "version": "1.0.0",
+  "description": "Desktop application for managing school bell schedules and audio announcements",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "Francis Quayson",
+    "email": "quaysonfrancis14@gmail.com"
+  },
+
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev --disable-gpu-sandbox --no-sandbox",
+    "build": "electron-builder --win",
+    "build-win": "electron-builder --win",
+    "build-x64": "electron-builder --win --x64",
+    "build-ia32": "electron-builder --win --ia32",
+    "build-portable": "electron-builder --win portable",
+    "dist": "npm run build",
+    "pack": "electron-builder --dir",
+    "clean": "rm -rf dist/",
+    "test": "echo \"No tests specified yet\" && exit 0",
+    "debug": "electron . --dev --enable-logging --remote-debugging-port=9222",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "electron",
+    "school",
+    "bell",
+    "schedule",
+    "audio",
+    "automation",
+    "education"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "electron-auto-launch": "^5.0.7",
+    "node-cron": "^3.0.2",
+    "bcrypt": "^5.1.0",
+    "node-machine-id": "^1.1.12"
+  },
+  "build": {
+    "appId": "com.schoolbell.system",
+    "productName": "School Bell System",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist/",
+      "buildResources": "build/"
+    },
+    "files": [
+      "src/**/*",
+      "audio/**/*",
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraFiles": [
+      {
+        "from": "audio",
+        "to": "audio",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icons/icon.ico",
+      "publisherName": "School Bell System",
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico",
+      "installerHeaderIcon": "build/icons/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "School Bell System",
+      "include": "build/installer.nsh",
+      "license": "build/license.txt"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "publish": null
+  }
+
+}
