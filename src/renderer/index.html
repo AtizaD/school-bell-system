@@ -159,7 +159,7 @@
                 </div>
 
                 <div class="day-tabs">
-                    <button class="day-tab active" data-day="monday">Monday</button>
+                    <button class="day-tab" data-day="monday">Monday</button>
                     <button class="day-tab" data-day="tuesday">Tuesday</button>
                     <button class="day-tab" data-day="wednesday">Wednesday</button>
                     <button class="day-tab" data-day="thursday">Thursday</button>
@@ -185,6 +185,21 @@
                 <div class="audio-header">
                     <h2>Audio Library</h2>
                     <div class="audio-actions">
+                        <div class="bulk-actions" id="bulkActions" style="display: none;">
+                            <button class="btn btn-outline btn-sm" id="selectAllBtn">
+                                <span class="btn-icon">☑️</span>
+                                Select All
+                            </button>
+                            <button class="btn btn-outline btn-sm" id="selectNoneBtn">
+                                <span class="btn-icon">⬜</span>
+                                Select None
+                            </button>
+                            <button class="btn btn-danger btn-sm" id="bulkDeleteBtn">
+                                <span class="btn-icon">🗑️</span>
+                                Delete Selected
+                            </button>
+                            <span class="selected-count" id="selectedCount">0 selected</span>
+                        </div>
                         <button class="btn btn-primary" id="uploadAudioBtn">
                             <span class="btn-icon">⬆️</span>
                             Upload Audio
@@ -347,6 +362,7 @@
         </div>
     </div>
 
+    <script src="js/html5-audio.js"></script>
     <script src="js/app.js"></script>
     <script src="js/schedule.js"></script>
     <script src="js/audio.js"></script>

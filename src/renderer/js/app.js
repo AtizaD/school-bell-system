@@ -1,7 +1,7 @@
 class SchoolBellApp {
   constructor() {
     this.currentTab = 'dashboard';
-    this.currentDay = 'monday';
+    this.currentDay = null; // Will be set to current day when schedule is first loaded
     this.data = null;
     this.isLoading = false;
     this.audioStatusInterval = null;
@@ -184,6 +184,12 @@ class SchoolBellApp {
     if (this.elements.currentTime) {
       this.elements.currentTime.textContent = timeString;
     }
+  }
+
+  getCurrentDayName() {
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const today = new Date().getDay(); // 0=Sunday, 1=Monday, etc.
+    return days[today];
   }
 
   setStatus(type, message) {
@@ -482,7 +488,17 @@ class SchoolBellApp {
   async updateSchedule() {
     try {
       await this.loadData();
-      this.updateScheduleDay();
+      
+      // If no current day is set, default to current day of the week
+      if (!this.currentDay) {
+        this.switchDay(this.getCurrentDayName());
+      } else {
+        // Make sure the correct day tab is highlighted
+        this.elements.dayTabs.forEach(tab => {
+          tab.classList.toggle('active', tab.dataset.day === this.currentDay);
+        });
+        this.updateScheduleDay();
+      }
     } catch (error) {
       console.error('Schedule update failed:', error);
       this.showNotification('Failed to update schedule', 'error');
@@ -734,7 +750,28 @@ class SchoolBellApp {
         this.setAudioControlsState(false);
       }
       
-      const result = await window.electronAPI.testAudio(filename);
+      // Use HTML5 audio player for consistent behavior
+      let result;
+      if (window.html5AudioPlayer) {
+        try {
+          result = await window.html5AudioPlayer.playAudio(filename);
+          console.log('HTML5 audio playback started for:', filename);
+          
+          // Wait for audio to complete or be stopped
+          await this.waitForAudioCompletion(filename);
+        } catch (html5Error) {
+          console.warn('HTML5 audio failed, falling back to main process:', html5Error.message);
+          if (this.showNotification) {
+            this.showNotification(`HTML5 audio failed, using system player...`, 'warning');
+          }
+          
+          // Fallback to main process audio player
+          result = await window.electronAPI.testAudio(filename);
+        }
+      } else {
+        // Fallback to main process audio player
+        result = await window.electronAPI.testAudio(filename);
+      }
       
       this.setStatus('ready', 'Ready');
       
@@ -756,8 +793,30 @@ class SchoolBellApp {
     }
   }
 
+  waitForAudioCompletion(filename) {
+    return new Promise((resolve) => {
+      const checkCompletion = () => {
+        if (window.html5AudioPlayer && 
+            (!window.html5AudioPlayer.isAudioPlaying() || 
+             window.html5AudioPlayer.getCurrentFile() !== filename)) {
+          resolve();
+        } else {
+          setTimeout(checkCompletion, 100);
+        }
+      };
+      checkCompletion();
+    });
+  }
+
   async stopAllAudio() {
     try {
+      // Stop HTML5 audio player first
+      if (window.html5AudioPlayer && window.html5AudioPlayer.isAudioPlaying()) {
+        await window.html5AudioPlayer.stopAudio();
+        console.log('HTML5 audio stopped');
+      }
+      
+      // Also stop main process audio for compatibility
       await window.electronAPI.stopAllAudio();
       this.setStatus('ready', 'Ready');
       
@@ -777,7 +836,19 @@ class SchoolBellApp {
       console.log('Testing system audio...');
       this.showNotification('Testing system audio (you should hear a beep)...', 'info');
       
-      const result = await window.electronAPI.testSystemAudio();
+      let result;
+      // Use HTML5 audio player for system test if available
+      if (window.html5AudioPlayer) {
+        try {
+          result = await window.html5AudioPlayer.testSystemAudio();
+          console.log('HTML5 system audio test completed');
+        } catch (error) {
+          console.warn('HTML5 system audio test failed, trying fallback:', error.message);
+          result = await window.electronAPI.testSystemAudio();
+        }
+      } else {
+        result = await window.electronAPI.testSystemAudio();
+      }
       
       if (result.success) {
         this.showNotification('System audio test completed! Did you hear a beep?', 'success');

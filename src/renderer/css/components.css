@@ -726,3 +726,51 @@ input:checked + .toggle-slider:before {
         justify-content: center;
     }
 }
+
+/* Audio Playing State Styles */
+.audio-file.playing {
+    border-color: #28a745 !important;
+    background: linear-gradient(135deg, #f8fff9 0%, #f0fff4 100%) !important;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2) !important;
+    animation: playingGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes playingGlow {
+    0% {
+        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+    }
+    100% {
+        box-shadow: 0 6px 16px rgba(40, 167, 69, 0.3);
+    }
+}
+
+.audio-file.playing .audio-name::before {
+    content: "🎵 ";
+    color: #28a745;
+    font-weight: bold;
+}
+
+.audio-file.playing .play-btn.playing {
+    background: #28a745 !important;
+    border-color: #28a745 !important;
+    color: white !important;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.audio-file.playing .stop-btn.active {
+    background: #dc3545 !important;
+    border-color: #dc3545 !important;
+    color: white !important;
+}

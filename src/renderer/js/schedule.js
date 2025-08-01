@@ -37,7 +37,7 @@ function extendAppWithScheduleMethods(app) {
             <!-- Time Picker -->
             <div class="form-group">
               <label for="eventTime">Time *</label>
-              <input type="time" id="eventTime" step="1" required>
+              <input type="time" id="eventTime" required>
             </div>
             
             <!-- Audio Selection -->
@@ -102,6 +102,13 @@ function extendAppWithScheduleMethods(app) {
     
     const dropdown = document.getElementById('audioDropdown');
     const addBtn = document.getElementById('addAudioBtn');
+    const eventNameInput = document.getElementById('eventName');
+    
+    // Focus the event name field for better UX
+    if (eventNameInput) {
+      eventNameInput.focus();
+      eventNameInput.select(); // Select any existing text for easy replacement
+    }
     
     // Enable/disable add button based on selection
     dropdown.addEventListener('change', () => {
@@ -350,10 +357,15 @@ function extendAppWithScheduleMethods(app) {
       // Populate with event data
       setTimeout(() => {
         document.getElementById('modalTitle').textContent = 'Edit Event';
-        document.getElementById('eventName').value = event.name;
-        document.getElementById('eventTime').value = event.time.substring(0, 8); // HH:MM:SS to HH:MM:SS
+        const eventNameInput = document.getElementById('eventName');
+        eventNameInput.value = event.name;
+        document.getElementById('eventTime').value = event.time.substring(0, 5); // HH:MM:SS to HH:MM
         document.getElementById('eventEnabled').checked = event.enabled !== false;
         document.getElementById('eventNotes').value = event.notes || '';
+        
+        // Focus and select the event name for easy editing
+        eventNameInput.focus();
+        eventNameInput.select();
         
         // Set audio sequence
         this.audioSequence = event.audioSequence ? [...event.audioSequence] : [];

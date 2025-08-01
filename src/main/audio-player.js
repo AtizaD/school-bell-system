@@ -11,6 +11,7 @@ class AudioPlayer {
     this.isInitialized = false;
     this.isPlaying = false;
     this.pendingStop = false;
+    this.currentPlayingFile = null;
   }
 
   async init() {
@@ -32,6 +33,7 @@ class AudioPlayer {
 
     try {
       this.isPlaying = true;
+      this.currentPlayingFile = filename;
       await this.stopAllAudio();
       
       const settings = this.dataManager.getSettings();
@@ -61,6 +63,7 @@ class AudioPlayer {
         this.currentProcess.on('close', (code, signal) => {
           this.currentProcess = null;
           this.isPlaying = false;
+          this.currentPlayingFile = null;
           
           if (signal === 'SIGTERM' || signal === 'SIGKILL') {
             resolve({ success: true, stopped: true, filename });
@@ -115,6 +118,7 @@ class AudioPlayer {
         this.currentProcess.on('close', (code, signal) => {
           this.currentProcess = null;
           this.isPlaying = false;
+          this.currentPlayingFile = null;
           this.hasTriedFallback = false;
           
           if (signal === 'SIGTERM' || signal === 'SIGKILL') {
@@ -219,6 +223,7 @@ class AudioPlayer {
       }
       
       this.isPlaying = false;
+      this.currentPlayingFile = null;
       return { success: true, stopped };
       
     } finally {
@@ -259,8 +264,21 @@ class AudioPlayer {
     }
   }
 
-  setVolume(volume) {
+  async setVolume(volume) {
     this.volume = Math.max(0, Math.min(100, volume));
+    
+    // If audio is currently playing, restart it with the new volume
+    if (this.isPlaying && this.currentProcess && this.currentPlayingFile) {
+      try {
+        // Stop current audio
+        await this.stopAllAudio();
+        
+        // Restart with new volume
+        await this.playAudio(this.currentPlayingFile);
+      } catch (error) {
+        console.warn('Failed to apply real-time volume change:', error.message);
+      }
+    }
   }
 
   getVolume() {

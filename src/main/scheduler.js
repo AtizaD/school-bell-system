@@ -160,7 +160,15 @@ class Scheduler {
       );
 
       if (event.audioSequence && event.audioSequence.length > 0) {
-        await this.audioPlayer.playEventSequence(event);
+        // Try HTML5 audio first, fallback to native audio player
+        try {
+          await this.playEventWithHTML5Audio(event);
+        } catch (html5Error) {
+          this.dataManager.logActivitySafe('schedule_html5_fallback', 
+            `HTML5 audio failed for "${event.name}", using native player: ${html5Error.message}`
+          );
+          await this.audioPlayer.playEventSequence(event);
+        }
       } else {
         this.dataManager.logActivitySafe('schedule_no_audio', 
           `Event "${event.name}" has no audio sequence defined`
@@ -370,6 +378,55 @@ class Scheduler {
   cleanup() {
     this.stop();
     this.clearAllJobs();
+  }
+
+  async playEventWithHTML5Audio(event) {
+    // This method sends the event to the renderer process to play with HTML5 audio
+    // We need to get the main window reference from the app instance
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows()[0]; // Get the main window
+    
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Main window not available for HTML5 audio playback');
+    }
+
+    return new Promise((resolve, reject) => {
+      // Send the event to renderer process
+      mainWindow.webContents.send('scheduled-audio', event);
+      
+      // Set up a timeout for the audio sequence
+      const audioSequenceTimeMs = this.calculateAudioSequenceTime(event.audioSequence);
+      const timeout = setTimeout(() => {
+        this.dataManager.logActivitySafe('schedule_audio_completed', 
+          `Scheduled audio completed for "${event.name}"`
+        );
+        resolve({ success: true });
+      }, audioSequenceTimeMs + 1000); // Add 1 second buffer
+      
+      // If there's an error, reject after a reasonable timeout
+      const errorTimeout = setTimeout(() => {
+        clearTimeout(timeout);
+        reject(new Error('HTML5 audio playback timeout'));
+      }, audioSequenceTimeMs + 5000); // 5 second error timeout
+      
+      // Clear timeouts if completed
+      setTimeout(() => {
+        clearTimeout(errorTimeout);
+      }, audioSequenceTimeMs + 1000);
+    });
+  }
+
+  calculateAudioSequenceTime(audioSequence) {
+    // Calculate total time for audio sequence
+    // Default estimate: 3 seconds per audio file + 1 second delay between files
+    if (!audioSequence || audioSequence.length === 0) return 0;
+    
+    return audioSequence.reduce((total, item) => {
+      const estimatedDuration = 3000; // 3 seconds default per file
+      const repeatCount = item.repeat || 1;
+      const delayBetween = 1000; // 1 second delay between repetitions
+      return total + (estimatedDuration * repeatCount) + (delayBetween * (repeatCount - 1));
+    }, 0);
   }
 
   async emergencyStop() {

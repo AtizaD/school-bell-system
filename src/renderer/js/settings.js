@@ -167,8 +167,14 @@ function extendAppWithSettingsMethods(app) {
       clearTimeout(this.volumeUpdateTimeout);
     }
     
-    // Apply volume immediately to audio player (real-time)
+    // Apply volume immediately to HTML5 audio player (real-time)
     try {
+      if (window.html5AudioPlayer) {
+        window.html5AudioPlayer.setVolume(volume);
+        console.log('Real-time HTML5 volume applied:', volume);
+      }
+      
+      // Also update the main process for compatibility
       await window.electronAPI.setVolume(volume);
       console.log('Real-time volume applied:', volume);
     } catch (error) {

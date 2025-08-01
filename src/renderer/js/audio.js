@@ -16,6 +16,9 @@ function extendAppWithAudioMethods(app) {
       await this.loadData();
       await this.renderAudioFiles();
       this.setupAudioDragDrop();
+      
+      // Refresh audio playing state from HTML5 player
+      this.refreshAudioPlayingState();
     } catch (error) {
       this.showNotification('Failed to load audio library', 'error');
     }
@@ -53,6 +56,9 @@ function extendAppWithAudioMethods(app) {
         return `
           <div class="audio-file ${statusClass}" data-id="${audioFile.id}" data-filename="${audioFile.filename}">
             <div class="audio-header">
+              <div class="audio-checkbox">
+                <input type="checkbox" class="audio-select" data-id="${audioFile.id}" onchange="app.updateBulkActions()">
+              </div>
               <div class="audio-info">
                 <div class="audio-name">${this.escapeHtml(audioFile.name)}</div>
                 <div class="audio-filename">${this.escapeHtml(audioFile.filename)}</div>
@@ -92,6 +98,12 @@ function extendAppWithAudioMethods(app) {
 
       audioGrid.innerHTML = audioHTML;
       
+      // Attach bulk action event listeners after rendering
+      this.attachBulkActionListeners();
+      
+      // Initialize bulk actions state
+      this.updateBulkActions();
+      
       // Log missing files to console but don't show user notification
       const totalFiles = audioFiles.length;
       const availableCount = audioFiles.filter(af => availableFiles.includes(af.filename)).length;
@@ -126,6 +138,13 @@ function extendAppWithAudioMethods(app) {
       `).join('');
 
       audioGrid.innerHTML = audioHTML;
+      
+      // Attach bulk action event listeners after rendering
+      this.attachBulkActionListeners();
+      
+      // Initialize bulk actions state
+      this.updateBulkActions();
+      
       console.warn('Could not verify audio file status');
     }
   };
@@ -143,18 +162,33 @@ function extendAppWithAudioMethods(app) {
       // Update UI to show which audio is playing
       this.updateAudioPlayingState(filename, true);
       
-      const result = await window.electronAPI.testAudio(filename);
+      // Use HTML5 audio player for real-time volume control
+      let result;
+      if (window.html5AudioPlayer) {
+        try {
+          result = await window.html5AudioPlayer.playAudio(filename);
+          console.log('HTML5 audio started successfully');
+          
+          // Wait for audio to complete or be stopped
+          await this.waitForAudioCompletion(filename);
+        } catch (html5Error) {
+          console.warn('HTML5 audio failed, falling back to main process:', html5Error.message);
+          this.showNotification(`HTML5 audio failed, using system player...`, 'warning');
+          
+          // Fallback to main process audio player
+          result = await window.electronAPI.testAudio(filename);
+        }
+      } else {
+        // Fallback to main process audio player
+        result = await window.electronAPI.testAudio(filename);
+      }
       
       // Reset status when done
       this.setStatus('ready', 'Ready');
       this.updateAudioPlayingState(filename, false);
       
       if (result && result.success) {
-        if (result.stopped) {
-          this.showNotification(`Audio stopped: ${filename}`, 'info');
-        } else {
-          this.showNotification(`Audio completed: ${filename}`, 'success');
-        }
+        this.showNotification(`Audio completed: ${filename}`, 'success');
       }
       
     } catch (error) {
@@ -174,20 +208,54 @@ function extendAppWithAudioMethods(app) {
     }
   };
 
+  app.waitForAudioCompletion = function(filename) {
+    return new Promise((resolve) => {
+      const checkCompletion = () => {
+        if (window.html5AudioPlayer && 
+            (!window.html5AudioPlayer.isAudioPlaying() || 
+             window.html5AudioPlayer.getCurrentFile() !== filename)) {
+          resolve();
+        } else {
+          setTimeout(checkCompletion, 100);
+        }
+      };
+      checkCompletion();
+    });
+  };
+
   app.stopAudio = async function() {
     try {
-      const result = await window.electronAPI.stopTestAudio();
+      let stopped = false;
+      
+      // Stop HTML5 audio player first
+      if (window.html5AudioPlayer && window.html5AudioPlayer.isAudioPlaying()) {
+        window.html5AudioPlayer.stopAudio();
+        stopped = true;
+        console.log('HTML5 audio stopped');
+      }
+      
+      // Also stop main process audio for compatibility
+      try {
+        const result = await window.electronAPI.stopTestAudio();
+        if (result && result.stopped) {
+          stopped = true;
+        }
+      } catch (error) {
+        console.warn('Main process audio stop failed:', error.message);
+      }
+      
       this.setStatus('ready', 'Ready');
       
       // Reset all audio UI states
       this.updateAudioPlayingState(null, false);
       
-      if (result && result.stopped) {
+      if (stopped) {
         this.showNotification('Audio stopped', 'info');
       } else {
         this.showNotification('No audio was playing', 'info');
       }
     } catch (error) {
+      console.error('Failed to stop audio:', error);
       this.showNotification('Failed to stop audio', 'error');
     }
   };
@@ -228,6 +296,25 @@ function extendAppWithAudioMethods(app) {
         }
       }
     });
+  };
+
+  // NEW: Refresh audio playing state from HTML5 player when switching tabs
+  app.refreshAudioPlayingState = function() {
+    if (window.html5AudioPlayer) {
+      const isPlaying = window.html5AudioPlayer.isAudioPlaying();
+      const currentFile = window.html5AudioPlayer.getCurrentFile();
+      
+      if (isPlaying && currentFile) {
+        console.log('Refreshing audio state - currently playing:', currentFile);
+        this.updateAudioPlayingState(currentFile, true);
+      } else {
+        console.log('Refreshing audio state - no audio playing');
+        this.updateAudioPlayingState(null, false);
+      }
+    } else {
+      // Fallback: clear all playing states if HTML5 player not available
+      this.updateAudioPlayingState(null, false);
+    }
   };
 
   // REMOVED: setAudioControlsState function - no longer needed
@@ -489,12 +576,10 @@ function extendAppWithAudioMethods(app) {
         );
 
         const buffer = await window.electronAPI.readFileAsBuffer(file);
-        const timestamp = Date.now();
         const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const filename = `${timestamp}_${safeName}`;
 
         await window.electronAPI.uploadAudioFile({
-          filename: filename,
+          filename: safeName,
           buffer: buffer,
           displayName: file.name
         });
@@ -913,6 +998,151 @@ document.addEventListener('DOMContentLoaded', () => {
         gap: 0.4rem;
       }
     }
+
+    /* Bulk selection styles */
+    .audio-checkbox {
+      margin-right: 12px;
+      display: flex;
+      align-items: center;
+    }
+
+    .audio-checkbox input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .audio-file.selected {
+      background-color: #e3f2fd;
+      border-color: #2196f3;
+    }
+
+    .bulk-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 16px;
+      padding: 8px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+    }
+
+    .selected-count {
+      font-size: 0.875rem;
+      color: #6c757d;
+      margin-left: 8px;
+    }
   `;
   document.head.appendChild(audioStyles);
+
+  // Bulk selection functionality
+  app.updateBulkActions = function() {
+    const checkboxes = document.querySelectorAll('.audio-select');
+    const checkedBoxes = document.querySelectorAll('.audio-select:checked');
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    
+    if (checkboxes.length > 0 && bulkActions && selectedCount) {
+      bulkActions.style.display = checkedBoxes.length > 0 ? 'flex' : 'none';
+      selectedCount.textContent = `${checkedBoxes.length} selected`;
+      
+      // Update visual selection state
+      checkboxes.forEach(checkbox => {
+        const audioFile = checkbox.closest('.audio-file');
+        if (checkbox.checked) {
+          audioFile.classList.add('selected');
+        } else {
+          audioFile.classList.remove('selected');
+        }
+      });
+    }
+  };
+
+  app.selectAllAudio = function() {
+    const checkboxes = document.querySelectorAll('.audio-select');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+    this.updateBulkActions();
+  };
+
+  app.selectNoneAudio = function() {
+    const checkboxes = document.querySelectorAll('.audio-select');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+    this.updateBulkActions();
+  };
+
+  app.bulkDeleteAudio = async function() {
+    const checkedBoxes = document.querySelectorAll('.audio-select:checked');
+    if (checkedBoxes.length === 0) {
+      this.showNotification('No audio files selected', 'warning');
+      return;
+    }
+
+    const selectedIds = Array.from(checkedBoxes).map(cb => cb.dataset.id);
+    const selectedFiles = selectedIds.map(id => {
+      const audioFile = this.data?.audioFiles?.find(af => af.id === id);
+      return audioFile ? audioFile.name : id;
+    }).join(', ');
+
+    const confirmed = confirm(
+      `Are you sure you want to delete ${checkedBoxes.length} audio file${checkedBoxes.length > 1 ? 's' : ''}?\n\n${selectedFiles}\n\nThis action cannot be undone.`
+    );
+
+    if (confirmed) {
+      try {
+        this.showNotification('Deleting audio files...', 'info');
+
+        const result = await window.electronAPI.bulkDeleteAudioFiles(selectedIds);
+        
+        if (result.success) {
+          this.showNotification(
+            `Successfully deleted ${result.deletedCount} audio file${result.deletedCount > 1 ? 's' : ''}`, 
+            'success'
+          );
+          
+          if (result.errors && result.errors.length > 0) {
+            this.showNotification(`Failed to delete ${result.errors.length} files`, 'warning');
+          }
+
+          await this.loadData();
+          await this.renderAudioFiles();
+          this.updateBulkActions();
+        } else {
+          throw new Error(result.message || 'Bulk delete failed');
+        }
+      } catch (error) {
+        console.error('Bulk delete failed:', error);
+        this.showNotification(`Failed to delete audio files: ${error.message}`, 'error');
+      }
+    }
+  };
+
+  // Attach bulk action event listeners
+  app.attachBulkActionListeners = function() {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const selectNoneBtn = document.getElementById('selectNoneBtn');
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+
+    // Remove existing listeners to prevent duplicates
+    if (selectAllBtn) {
+      selectAllBtn.replaceWith(selectAllBtn.cloneNode(true));
+      const newSelectAllBtn = document.getElementById('selectAllBtn');
+      newSelectAllBtn.addEventListener('click', () => this.selectAllAudio());
+    }
+    if (selectNoneBtn) {
+      selectNoneBtn.replaceWith(selectNoneBtn.cloneNode(true));
+      const newSelectNoneBtn = document.getElementById('selectNoneBtn');
+      newSelectNoneBtn.addEventListener('click', () => this.selectNoneAudio());
+    }
+    if (bulkDeleteBtn) {
+      bulkDeleteBtn.replaceWith(bulkDeleteBtn.cloneNode(true));
+      const newBulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      newBulkDeleteBtn.addEventListener('click', () => this.bulkDeleteAudio());
+    }
+  };
 });

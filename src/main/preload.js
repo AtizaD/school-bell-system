@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAudioFiles: () => ipcRenderer.invoke('audio-get-files'),
   addAudioFile: (audioData) => ipcRenderer.invoke('audio-add-file', audioData),
   deleteAudioFile: (audioId) => ipcRenderer.invoke('audio-delete-file', audioId),
+  bulkDeleteAudioFiles: (audioIds) => ipcRenderer.invoke('audio-bulk-delete', audioIds),
   uploadAudioFile: (fileData) => ipcRenderer.invoke('upload-audio-file', fileData),
   
   getTemplates: () => ipcRenderer.invoke('template-get-all'),
@@ -34,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAvailableAudioFiles: () => ipcRenderer.invoke('audio-get-available-files'),
   getAudioStatus: () => ipcRenderer.invoke('audio-get-status'),
   testSystemAudio: () => ipcRenderer.invoke('audio-test-system'),
+  getAudioFileUrl: (filename) => ipcRenderer.invoke('audio-get-file-url', filename),
+  getAudioFilePath: (filename) => ipcRenderer.invoke('audio-get-file-path', filename),
+  playScheduledAudio: (eventData) => ipcRenderer.invoke('audio-play-scheduled', eventData),
   
   getSchedulerStatus: () => ipcRenderer.invoke('scheduler-get-status'),
   testEvent: (day, eventData) => ipcRenderer.invoke('scheduler-test-event', day, eventData),
@@ -83,6 +87,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAudioNotificationListener: () => {
     ipcRenderer.removeAllListeners('audio-notification');
   },
+
+  onScheduledAudio: (callback) => {
+    ipcRenderer.on('scheduled-audio', callback);
+  },
+  
+  removeScheduledAudioListener: () => {
+    ipcRenderer.removeAllListeners('scheduled-audio');
+  },
   
   // Session management
   onSessionExpired: (callback) => {
@@ -118,6 +130,34 @@ window.addEventListener('DOMContentLoaded', () => {
     window.electronAPI.onSessionExpired((event) => {
       if (window.app && window.app.handleSessionExpired) {
         window.app.handleSessionExpired();
+      }
+    });
+  }
+
+  if (window.electronAPI && window.electronAPI.onScheduledAudio) {
+    window.electronAPI.onScheduledAudio(async (event, eventData) => {
+      try {
+        console.log('Received scheduled audio event:', eventData);
+        
+        if (window.html5AudioPlayer && eventData.audioSequence) {
+          // Show notification for scheduled event
+          if (window.app && window.app.showNotification) {
+            window.app.showNotification(`Playing scheduled event: ${eventData.name}`, 'info');
+          }
+          
+          // Play the audio sequence using HTML5 audio
+          await window.html5AudioPlayer.playAudioSequence(eventData.audioSequence);
+          
+          // Notify completion
+          if (window.app && window.app.showNotification) {
+            window.app.showNotification(`Completed scheduled event: ${eventData.name}`, 'success');
+          }
+        }
+      } catch (error) {
+        console.error('Scheduled audio playback failed:', error);
+        if (window.app && window.app.showNotification) {
+          window.app.showNotification(`Scheduled audio failed: ${error.message}`, 'error');
+        }
       }
     });
   }

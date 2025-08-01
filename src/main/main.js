@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, Notification } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs').promises;
@@ -7,266 +7,177 @@ const AudioPlayer = require('./audio-player');
 const Scheduler = require('./scheduler');
 const AuthManager = require('./auth-manager');
 
+// Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('--disable-gpu');
 app.commandLine.appendSwitch('--no-sandbox');
 
+/**
+ * School Bell System - Production Main Process
+ * 
+ * Features:
+ * - Single instance enforcement
+ * - System tray with background operation
+ * - Auto-startup with Windows
+ * - Auto-updater with GitHub releases
+ * - Secure authentication system
+ * - Audio scheduling and playback
+ * - Cross-platform compatibility
+ */
 class SchoolBellApp {
   constructor() {
+    // Core window and tray
     this.mainWindow = null;
     this.tray = null;
+    
+    // Application modules
     this.dataManager = null;
     this.audioPlayer = null;
     this.scheduler = null;
     this.authManager = null;
+    this.autoLauncher = null;
+    
+    // Application state
     this.isDevelopment = process.argv.includes('--dev');
     this.isInitialized = false;
     this.isQuitting = false;
+    this.hasShownTrayNotification = false;
     
-    // Auto-updater configuration
+    // Auto-updater state
     this.updateCheckInterval = null;
     this.updateAvailable = false;
     
-    // Configure auto-updater
-    this.configureAutoUpdater();
+    // Error handling
+    process.on('uncaughtException', this.handleUncaughtException.bind(this));
+    process.on('unhandledRejection', this.handleUnhandledRejection.bind(this));
   }
 
-  configureAutoUpdater() {
-    // Configure auto-updater settings
-    autoUpdater.autoDownload = false; // Don't auto-download, ask user first
-    autoUpdater.autoInstallOnAppQuit = true;
-    
-    // Set update check interval (check every 4 hours)
-    if (!this.isDevelopment) {
-      this.updateCheckInterval = setInterval(() => {
-        this.checkForUpdates(false); // Silent check
-      }, 4 * 60 * 60 * 1000); // 4 hours
-    }
-
-    // Auto-updater event handlers
-    autoUpdater.on('checking-for-update', () => {
-      console.log('Checking for updates...');
-      this.sendUpdateStatus('checking', 'Checking for updates...');
-    });
-
-    autoUpdater.on('update-available', (info) => {
-      console.log('Update available:', info.version);
-      this.updateAvailable = true;
-      this.sendUpdateStatus('available', `Update ${info.version} is available`, info);
-      this.showUpdateAvailableDialog(info);
-    });
-
-    autoUpdater.on('update-not-available', (info) => {
-      console.log('Update not available');
-      this.updateAvailable = false;
-      this.sendUpdateStatus('not-available', 'You are using the latest version');
-    });
-
-    autoUpdater.on('error', (err) => {
-      console.error('Auto-updater error:', err);
-      this.sendUpdateStatus('error', `Update error: ${err.message}`);
-    });
-
-    autoUpdater.on('download-progress', (progressObj) => {
-      const { bytesPerSecond, percent, transferred, total } = progressObj;
-      const message = `Download speed: ${Math.round(bytesPerSecond / 1024)} KB/s - Downloaded ${Math.round(percent)}% (${Math.round(transferred / 1024 / 1024)}MB/${Math.round(total / 1024 / 1024)}MB)`;
-      console.log(message);
-      this.sendUpdateStatus('downloading', message, { percent, bytesPerSecond, transferred, total });
-    });
-
-    autoUpdater.on('update-downloaded', (info) => {
-      console.log('Update downloaded:', info.version);
-      this.sendUpdateStatus('downloaded', `Update ${info.version} downloaded and ready to install`);
-      this.showUpdateReadyDialog(info);
-    });
-  }
-
-  async checkForUpdates(showNoUpdateDialog = true) {
-    if (this.isDevelopment) {
-      if (showNoUpdateDialog) {
-        this.showUpdateDialog('Development Mode', 'Update checking is disabled in development mode.');
-      }
-      return;
-    }
-
-    try {
-      console.log('Manually checking for updates...');
-      this.sendUpdateStatus('checking', 'Checking for updates...');
-      
-      const result = await autoUpdater.checkForUpdates();
-      
-      if (showNoUpdateDialog && !this.updateAvailable) {
-        setTimeout(() => {
-          if (!this.updateAvailable) {
-            this.showUpdateDialog('No Updates', 'You are already using the latest version of School Bell System.');
-          }
-        }, 3000); // Wait 3 seconds to see if update is found
-      }
-      
-      return result;
-    } catch (error) {
-      console.error('Manual update check failed:', error);
-      this.sendUpdateStatus('error', `Update check failed: ${error.message}`);
-      
-      if (showNoUpdateDialog) {
-        this.showUpdateDialog('Update Check Failed', `Failed to check for updates: ${error.message}`);
-      }
-    }
-  }
-
-  showUpdateAvailableDialog(info) {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-
-    const options = {
-      type: 'info',
-      title: 'Update Available',
-      message: `School Bell System ${info.version} is available`,
-      detail: `Current version: ${app.getVersion()}\nNew version: ${info.version}\n\nRelease date: ${new Date(info.releaseDate).toLocaleDateString()}\n\nWould you like to download and install this update?`,
-      buttons: ['Download Now', 'Download Later', 'View Release Notes'],
-      defaultId: 0,
-      cancelId: 1
-    };
-
-    dialog.showMessageBox(this.mainWindow, options).then((result) => {
-      switch (result.response) {
-        case 0: // Download Now
-          this.downloadUpdate();
-          break;
-        case 1: // Download Later
-          this.sendUpdateStatus('postponed', 'Update postponed');
-          break;
-        case 2: // View Release Notes
-          shell.openExternal(`https://github.com/AtizaD/school-bell-system/releases/tag/v${info.version}`);
-          break;
-      }
-    });
-  }
-
-  showUpdateReadyDialog(info) {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-
-    const options = {
-      type: 'info',
-      title: 'Update Ready',
-      message: `School Bell System ${info.version} is ready to install`,
-      detail: 'The update has been downloaded and is ready to install. The application will restart to complete the installation.',
-      buttons: ['Install and Restart', 'Install on Exit'],
-      defaultId: 0,
-      cancelId: 1
-    };
-
-    dialog.showMessageBox(this.mainWindow, options).then((result) => {
-      if (result.response === 0) {
-        // Install and restart immediately
-        this.installUpdate();
-      } else {
-        // Install on exit (this is automatic with autoInstallOnAppQuit = true)
-        this.sendUpdateStatus('ready', 'Update will be installed when you close the application');
-      }
-    });
-  }
-
-  showUpdateDialog(title, message) {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-
-    dialog.showMessageBox(this.mainWindow, {
-      type: 'info',
-      title: title,
-      message: message,
-      buttons: ['OK']
-    });
-  }
-
-  downloadUpdate() {
-    try {
-      console.log('Starting update download...');
-      this.sendUpdateStatus('downloading', 'Downloading update...');
-      autoUpdater.downloadUpdate();
-    } catch (error) {
-      console.error('Failed to download update:', error);
-      this.sendUpdateStatus('error', `Download failed: ${error.message}`);
-    }
-  }
-
-  installUpdate() {
-    try {
-      console.log('Installing update and restarting...');
-      this.sendUpdateStatus('installing', 'Installing update and restarting...');
-      autoUpdater.quitAndInstall(false, true); // Don't force close, do restart
-    } catch (error) {
-      console.error('Failed to install update:', error);
-      this.sendUpdateStatus('error', `Installation failed: ${error.message}`);
-    }
-  }
-
-  sendUpdateStatus(status, message, data = null) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('update-status', { status, message, data });
-    }
-  }
-
+  /**
+   * Initialize the application
+   */
   async initialize() {
     try {
-      if (this.isInitialized) return;
+      console.log('🔔 Initializing School Bell System...');
+      
+      if (this.isInitialized) {
+        console.log('Already initialized, skipping...');
+        return;
+      }
 
-      this.authManager = new AuthManager();
-      
-      // Set up session expired callback
-      this.authManager.onSessionExpired = () => {
-        this.handleSessionExpired();
-      };
+      // Enforce single instance
+      if (!this.setupSingleInstance()) {
+        return; // Another instance is running
+      }
 
-      this.dataManager = new DataManager();
-      await this.dataManager.initialize();
+      // Initialize core modules
+      await this.initializeModules();
       
-      this.audioPlayer = new AudioPlayer(this.dataManager);
-      await this.audioPlayer.init();
-      
-      this.scheduler = new Scheduler(this.dataManager, this.audioPlayer);
-      await this.scheduler.init();
-      
+      // Setup application
       this.setupApp();
       this.setupIPC();
+      this.configureAutoUpdater();
       
       this.isInitialized = true;
+      console.log('✅ School Bell System initialized successfully');
       
-      // Check for updates on startup (after 5 seconds delay)
-      setTimeout(() => {
-        if (!this.isDevelopment) {
-          this.checkForUpdates(false); // Silent check on startup
-        }
-      }, 5000);
+      // Start update checking after initialization
+      this.scheduleUpdateCheck();
       
     } catch (error) {
-      dialog.showErrorBox('Initialization Error', 
-        `Failed to initialize the School Bell System.\n\nError: ${error.message}\n\nThe application will now close.`);
+      console.error('❌ Initialization failed:', error);
+      this.showFatalError('Initialization Error', error.message);
       app.quit();
     }
   }
 
-  setupApp() {
-    app.whenReady().then(() => {
-      this.createSystemTray();
-      this.createMainWindow();
-      this.createAppMenu();
-      this.setupAutoLaunch();
+  /**
+   * Setup single instance lock
+   */
+  setupSingleInstance() {
+    const gotTheLock = app.requestSingleInstanceLock();
+
+    if (!gotTheLock) {
+      console.log('Another instance is already running. Exiting...');
+      app.quit();
+      return false;
+    }
+
+    // Handle second instance attempt
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+      console.log('Second instance detected, showing main window');
+      this.showMainWindow();
       
-      app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-          this.createMainWindow();
-        }
-      });
+      // Show notification about already running
+      this.showTrayNotification(
+        'School Bell System', 
+        'Application is already running in the system tray'
+      );
     });
 
+    return true;
+  }
+
+  /**
+   * Initialize application modules
+   */
+  async initializeModules() {
+    console.log('Initializing application modules...');
+
+    // Authentication Manager
+    this.authManager = new AuthManager();
+    this.authManager.onSessionExpired = () => this.handleSessionExpired();
+
+    // Data Manager
+    this.dataManager = new DataManager();
+    await this.dataManager.initialize();
+
+    // Audio Player
+    this.audioPlayer = new AudioPlayer(this.dataManager);
+    await this.audioPlayer.init();
+
+    // Scheduler
+    this.scheduler = new Scheduler(this.dataManager, this.audioPlayer);
+    await this.scheduler.init();
+
+    console.log('✅ All modules initialized');
+  }
+
+  /**
+   * Setup main application
+   */
+  setupApp() {
+    app.whenReady().then(async () => {
+      console.log('App ready, setting up UI...');
+      
+      // Create system tray first (for background operation)
+      this.createSystemTray();
+      
+      // Create main window
+      this.createMainWindow();
+      
+      // Setup application menu
+      this.createAppMenu();
+      
+      // Setup auto-launch
+      await this.setupAutoLaunch();
+      
+      console.log('✅ UI setup complete');
+    });
+
+    // Handle window events
     app.on('window-all-closed', () => {
-      // Don't quit the app when all windows are closed
-      // Keep running in background via system tray
-      if (process.platform !== 'darwin') {
-        // On macOS, keep the app running even when no windows are open
-        // On Windows/Linux, keep running in system tray
+      // Don't quit - keep running in system tray
+      console.log('All windows closed, continuing in background...');
+    });
+
+    app.on('activate', () => {
+      // macOS: Re-create window when dock icon is clicked
+      if (BrowserWindow.getAllWindows().length === 0) {
+        this.createMainWindow();
       }
     });
 
+    // Handle application quit
     app.on('before-quit', async (event) => {
       if (!this.isQuitting) {
         event.preventDefault();
@@ -274,66 +185,82 @@ class SchoolBellApp {
         return;
       }
       
-      try {
-        // Clear update check interval
-        if (this.updateCheckInterval) {
-          clearInterval(this.updateCheckInterval);
-        }
-        
-        if (this.audioPlayer) await this.audioPlayer.cleanup();
-        if (this.scheduler) this.scheduler.stop();
-        if (this.authManager) this.authManager.cleanup();
-        if (this.dataManager) this.dataManager.logActivitySafe('app_shutdown', 'Application shutdown');
-      } catch (error) {
-        // Silent cleanup
-      }
+      console.log('Application quitting, cleaning up...');
+      await this.cleanup();
+    });
+
+    app.on('will-quit', () => {
+      console.log('Application will quit');
+      this.cleanup();
     });
   }
 
+  /**
+   * Create system tray
+   */
   createSystemTray() {
     try {
-      // Use static tray icon file
-      const trayIconPath = this.isDevelopment 
-        ? path.join(__dirname, '../../build/tray-icon.png')
-        : path.join(process.resourcesPath, 'tray-icon.png');
-      
-      // Check if tray icon exists, fallback to app icon
-      let trayIcon;
-      try {
-        trayIcon = nativeImage.createFromPath(trayIconPath);
-        if (trayIcon.isEmpty()) {
-          throw new Error('Tray icon is empty');
-        }
-      } catch (iconError) {
-        console.warn('Custom tray icon not found, using default icon');
-        // Create a simple 16x16 bell icon programmatically
-        trayIcon = this.createSimpleTrayIcon();
+      // Prevent duplicate tray creation
+      if (this.tray) {
+        console.log('System tray already exists');
+        return;
       }
-      
+
+      console.log('Creating system tray...');
+
+      // Load tray icon
+      const trayIcon = this.loadTrayIcon();
       this.tray = new Tray(trayIcon);
       
-      // Set tray tooltip
-      this.tray.setToolTip('School Bell System - Running in background');
-      
-      // Create tray context menu
+      // Configure tray
+      this.tray.setToolTip('School Bell System - Click to open');
       this.updateTrayMenu();
       
-      // Double click to show/hide main window
+      // Handle tray events
       this.tray.on('double-click', () => {
         this.toggleMainWindow();
       });
+
+      this.tray.on('click', () => {
+        if (process.platform === 'win32') {
+          this.toggleMainWindow();
+        }
+      });
       
-      console.log('System tray created successfully');
+      console.log('✅ System tray created');
       
     } catch (error) {
-      console.warn('Failed to create system tray:', error.message);
+      console.warn('⚠️ Failed to create system tray:', error.message);
       // App can still function without tray
     }
   }
 
-  createSimpleTrayIcon() {
-    // Create a simple programmatic icon as fallback
-    // 16x16 bitmap with bell pattern
+  /**
+   * Load tray icon
+   */
+  loadTrayIcon() {
+    const trayIconPath = this.isDevelopment 
+      ? path.join(__dirname, '../../build/tray-icon.png')
+      : path.join(process.resourcesPath, 'tray-icon.png');
+    
+    try {
+      const trayIcon = nativeImage.createFromPath(trayIconPath);
+      if (!trayIcon.isEmpty()) {
+        return trayIcon;
+      }
+    } catch (error) {
+      console.warn('Custom tray icon not found, using fallback');
+    }
+    
+    // Fallback: Create simple icon programmatically
+    return this.createFallbackTrayIcon();
+  }
+
+  /**
+   * Create fallback tray icon
+   */
+  createFallbackTrayIcon() {
+    // Simple 16x16 PNG icon data (bell shape)
     const iconData = Buffer.from([
       0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
       0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0xF3, 0xFF,
@@ -348,55 +275,59 @@ class SchoolBellApp {
     return nativeImage.createFromBuffer(iconData);
   }
 
+  /**
+   * Update tray context menu
+   */
   updateTrayMenu() {
     if (!this.tray) return;
     
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: 'School Bell System',
+        label: '🔔 School Bell System',
         type: 'normal',
         enabled: false
       },
       { type: 'separator' },
       {
-        label: 'Show Window',
+        label: '📖 Show Window',
         click: () => this.showMainWindow()
       },
       {
-        label: 'Hide Window', 
-        click: () => this.hideMainWindow()
+        label: '🙈 Hide Window', 
+        click: () => this.hideMainWindow(),
+        enabled: this.mainWindow && this.mainWindow.isVisible()
       },
       { type: 'separator' },
       {
-        label: 'Next Events',
+        label: '⏰ Next Events',
         submenu: this.createNextEventsSubmenu()
       },
+      { type: 'separator' },
       {
-        label: 'Quick Actions',
-        submenu: [
-          {
-            label: 'Stop All Audio',
-            click: async () => {
-              if (this.audioPlayer) {
-                await this.audioPlayer.stop();
-                this.showTrayNotification('Audio Stopped', 'All audio playback stopped');
-              }
-            }
-          },
-          {
-            label: 'Reload Schedules',
-            click: async () => {
-              if (this.scheduler) {
-                await this.scheduler.reloadSchedules();
-                this.showTrayNotification('Schedules Reloaded', 'All schedules have been reloaded');
-              }
-            }
+        label: '🎵 Stop All Audio',
+        click: async () => {
+          try {
+            await this.audioPlayer.stop();
+            this.showTrayNotification('Audio Stopped', 'All audio playback stopped');
+          } catch (error) {
+            console.error('Failed to stop audio:', error);
           }
-        ]
+        }
+      },
+      {
+        label: '🔄 Reload Schedules',
+        click: async () => {
+          try {
+            await this.scheduler.reloadSchedules();
+            this.showTrayNotification('Schedules Reloaded', 'All schedules have been reloaded');
+          } catch (error) {
+            console.error('Failed to reload schedules:', error);
+          }
+        }
       },
       { type: 'separator' },
       {
-        label: 'Settings',
+        label: '⚙️ Settings',
         submenu: [
           {
             label: 'Start with Windows',
@@ -408,13 +339,13 @@ class SchoolBellApp {
             label: 'Run in Background',
             type: 'checkbox',
             checked: true,
-            enabled: false // Always enabled for bell system
+            enabled: false
           }
         ]
       },
       { type: 'separator' },
       {
-        label: 'Quit School Bell System',
+        label: '❌ Quit School Bell System',
         click: () => this.confirmQuit()
       }
     ]);
@@ -422,10 +353,13 @@ class SchoolBellApp {
     this.tray.setContextMenu(contextMenu);
   }
 
+  /**
+   * Create next events submenu
+   */
   createNextEventsSubmenu() {
     try {
       if (!this.scheduler) {
-        return [{ label: 'No events scheduled', enabled: false }];
+        return [{ label: 'Scheduler not ready', enabled: false }];
       }
       
       const nextEvents = this.scheduler.getNextEvents(3);
@@ -444,49 +378,139 @@ class SchoolBellApp {
     }
   }
 
+  /**
+   * Format time until next event
+   */
   formatTimeUntil(seconds) {
-    if (seconds < 60) {
-      return `${seconds}s`;
-    } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60);
-      return `${minutes}m`;
-    } else if (seconds < 86400) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) {
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
       return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-    } else {
-      const days = Math.floor(seconds / 86400);
-      const hours = Math.floor((seconds % 86400) / 3600);
-      return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
     }
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
   }
 
+  /**
+   * Show tray notifications
+   */
   showTrayNotification(title, body) {
-    if (this.tray) {
-      this.tray.displayBalloon({
-        title: title,
-        content: body,
-        icon: this.tray.getImage()
-      });
-    }
-  }
-
-  toggleMainWindow() {
-    if (this.mainWindow) {
-      if (this.mainWindow.isVisible()) {
-        this.hideMainWindow();
-      } else {
-        this.showMainWindow();
+    try {
+      if (process.platform === 'win32' && this.tray) {
+        // Windows: Use tray balloon
+        this.tray.displayBalloon({
+          title: title,
+          content: body
+        });
+      } else if (Notification.isSupported()) {
+        // Other platforms: Use system notifications
+        const notification = new Notification({
+          title: title,
+          body: body
+        });
+        notification.show();
       }
-    } else {
-      this.createMainWindow();
+    } catch (error) {
+      console.warn('Failed to show notification:', error.message);
     }
   }
 
+  /**
+   * Window management
+   */
+  createMainWindow() {
+    if (this.mainWindow) {
+      this.showMainWindow();
+      return;
+    }
+
+    console.log('Creating main window...');
+
+    this.mainWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      minWidth: 1000,
+      minHeight: 700,
+      icon: this.getAppIcon(),
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        enableRemoteModule: false,
+        preload: path.join(__dirname, 'preload.js'),
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        sandbox: false
+      },
+      show: false,
+      autoHideMenuBar: false
+    });
+
+    // Load application
+    this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+    // Show window when ready
+    this.mainWindow.once('ready-to-show', () => {
+      this.mainWindow.show();
+      
+      // Set window title with version
+      const currentVersion = app.getVersion();
+      this.mainWindow.setTitle(`School Bell System v${currentVersion}`);
+      
+      console.log('✅ Main window ready');
+    });
+
+    // Handle window close - minimize to tray instead of quitting
+    this.mainWindow.on('close', (event) => {
+      if (!this.isQuitting) {
+        event.preventDefault();
+        this.hideMainWindow();
+        
+        // Show tray notification on first minimize
+        if (!this.hasShownTrayNotification) {
+          this.showTrayNotification(
+            'School Bell System', 
+            'App minimized to system tray. Double-click the tray icon to restore.'
+          );
+          this.hasShownTrayNotification = true;
+        }
+      }
+    });
+
+    this.mainWindow.on('closed', () => {
+      this.mainWindow = null;
+    });
+  }
+
+  /**
+   * Get application icon
+   */
+  getAppIcon() {
+    const iconPath = this.isDevelopment
+      ? path.join(__dirname, '../../build/icon.png')
+      : path.join(__dirname, '../renderer/assets/icons/icon.png');
+    
+    try {
+      return nativeImage.createFromPath(iconPath);
+    } catch (error) {
+      console.warn('App icon not found, using default');
+      return undefined;
+    }
+  }
+
+  /**
+   * Window visibility controls
+   */
   showMainWindow() {
     if (this.mainWindow) {
+      if (this.mainWindow.isMinimized()) {
+        this.mainWindow.restore();
+      }
       this.mainWindow.show();
       this.mainWindow.focus();
+      this.updateTrayMenu();
     } else {
       this.createMainWindow();
     }
@@ -495,9 +519,21 @@ class SchoolBellApp {
   hideMainWindow() {
     if (this.mainWindow) {
       this.mainWindow.hide();
+      this.updateTrayMenu();
     }
   }
 
+  toggleMainWindow() {
+    if (this.mainWindow && this.mainWindow.isVisible()) {
+      this.hideMainWindow();
+    } else {
+      this.showMainWindow();
+    }
+  }
+
+  /**
+   * Auto-launch setup
+   */
   async setupAutoLaunch() {
     try {
       const AutoLaunch = require('auto-launch');
@@ -505,22 +541,21 @@ class SchoolBellApp {
       this.autoLauncher = new AutoLaunch({
         name: 'School Bell System',
         path: app.getPath('exe'),
-        isHidden: false // Set to true to start minimized
+        isHidden: false
       });
       
-      // Check if auto-launch is already enabled
-      const isEnabled = await this.autoLauncher.isEnabled();
-      console.log('Auto-launch status:', isEnabled);
-      
-      // Enable auto-launch by default for bell system
+      // Enable auto-launch by default for school bell system
       const settings = this.dataManager?.getSettings();
+      const isEnabled = await this.autoLauncher.isEnabled();
+      
       if (settings?.autoStart !== false && !isEnabled) {
         await this.enableAutoLaunch();
       }
       
+      console.log('✅ Auto-launch configured');
+      
     } catch (error) {
-      console.warn('Auto-launch setup failed:', error.message);
-      // App can still function without auto-launch
+      console.warn('⚠️ Auto-launch setup failed:', error.message);
     }
   }
 
@@ -550,13 +585,10 @@ class SchoolBellApp {
 
   getAutoLaunchStatus() {
     try {
-      if (this.autoLauncher) {
-        return this.autoLauncher.isEnabled();
-      }
+      return this.autoLauncher ? this.autoLauncher.isEnabled() : false;
     } catch (error) {
-      console.warn('Failed to get auto-launch status:', error);
+      return false;
     }
-    return false;
   }
 
   async toggleAutoLaunch(enable) {
@@ -571,117 +603,181 @@ class SchoolBellApp {
       await this.dataManager.updateSettings({ autoStart: enable });
     }
     
-    // Update tray menu
     this.updateTrayMenu();
   }
 
-  showQuitConfirmation() {
+  /**
+   * Auto-updater configuration
+   */
+  configureAutoUpdater() {
+    if (this.isDevelopment) {
+      console.log('Auto-updater disabled in development mode');
+      return;
+    }
+
+    console.log('Configuring auto-updater...');
+
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+      console.log('Checking for updates...');
+      this.sendUpdateStatus('checking', 'Checking for updates...');
+    });
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info.version);
+      this.updateAvailable = true;
+      this.sendUpdateStatus('available', `Update ${info.version} is available`, info);
+      this.showUpdateAvailableDialog(info);
+    });
+
+    autoUpdater.on('update-not-available', () => {
+      console.log('No updates available');
+      this.updateAvailable = false;
+      this.sendUpdateStatus('not-available', 'You are using the latest version');
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err);
+      this.sendUpdateStatus('error', `Update error: ${err.message}`);
+    });
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      const { percent, bytesPerSecond, transferred, total } = progressObj;
+      const message = `Downloaded ${Math.round(percent)}% (${Math.round(transferred / 1024 / 1024)}MB/${Math.round(total / 1024 / 1024)}MB)`;
+      this.sendUpdateStatus('downloading', message, progressObj);
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('Update downloaded:', info.version);
+      this.sendUpdateStatus('downloaded', `Update ${info.version} ready to install`);
+      this.showUpdateReadyDialog(info);
+    });
+  }
+
+  scheduleUpdateCheck() {
+    if (this.isDevelopment) return;
+    
+    // Check on startup (after 10 seconds)
+    setTimeout(() => this.checkForUpdates(false), 10000);
+    
+    // Check every 4 hours
+    this.updateCheckInterval = setInterval(() => {
+      this.checkForUpdates(false);
+    }, 4 * 60 * 60 * 1000);
+  }
+
+  async checkForUpdates(showDialog = false) {
+    if (this.isDevelopment) {
+      if (showDialog) {
+        this.showUpdateDialog('Development Mode', 'Update checking is disabled in development mode.');
+      }
+      return;
+    }
+
+    try {
+      console.log('Checking for updates...');
+      this.sendUpdateStatus('checking', 'Checking for updates...');
+      
+      const result = await autoUpdater.checkForUpdates();
+      
+      if (showDialog && !this.updateAvailable) {
+        setTimeout(() => {
+          if (!this.updateAvailable) {
+            this.showUpdateDialog('No Updates', 'You are using the latest version.');
+          }
+        }, 3000);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Update check failed:', error);
+      this.sendUpdateStatus('error', `Update check failed: ${error.message}`);
+      
+      if (showDialog) {
+        this.showUpdateDialog('Update Check Failed', `Failed to check for updates: ${error.message}`);
+      }
+    }
+  }
+
+  showUpdateAvailableDialog(info) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
     const options = {
-      type: 'question',
-      title: 'Quit School Bell System',
-      message: 'Are you sure you want to quit School Bell System?',
-      detail: 'Quitting will stop all scheduled bell events until you restart the application.',
-      buttons: ['Cancel', 'Minimize to Tray', 'Quit Completely'],
-      defaultId: 1,
-      cancelId: 0
+      type: 'info',
+      title: 'Update Available',
+      message: `School Bell System ${info.version} is available`,
+      detail: `Current: ${app.getVersion()}\nNew: ${info.version}\n\nWould you like to download and install this update?`,
+      buttons: ['Download Now', 'Later', 'Release Notes'],
+      defaultId: 0,
+      cancelId: 1
     };
 
     dialog.showMessageBox(this.mainWindow, options).then((result) => {
       switch (result.response) {
-        case 0: // Cancel
+        case 0:
+          autoUpdater.downloadUpdate();
           break;
-        case 1: // Minimize to Tray
-          this.hideMainWindow();
-          this.showTrayNotification('Running in Background', 'School Bell System is still running in the system tray');
-          break;
-        case 2: // Quit Completely
-          this.confirmQuit();
+        case 2:
+          shell.openExternal(`https://github.com/AtizaD/school-bell-system/releases/tag/v${info.version}`);
           break;
       }
     });
   }
 
-  confirmQuit() {
-    this.isQuitting = true;
-    
-    if (this.tray) {
-      this.tray.destroy();
-    }
-    
-    app.quit();
+  showUpdateReadyDialog(info) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    const options = {
+      type: 'info',
+      title: 'Update Ready',
+      message: `School Bell System ${info.version} is ready to install`,
+      detail: 'The update will be installed when you restart the application.',
+      buttons: ['Restart Now', 'Restart Later'],
+      defaultId: 0
+    };
+
+    dialog.showMessageBox(this.mainWindow, options).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall(false, true);
+      }
+    });
   }
 
-  handleSessionExpired() {
+  showUpdateDialog(title, message) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    dialog.showMessageBox(this.mainWindow, {
+      type: 'info',
+      title: title,
+      message: message,
+      buttons: ['OK']
+    });
+  }
+
+  sendUpdateStatus(status, message, data = null) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('session-expired');
+      this.mainWindow.webContents.send('update-status', { status, message, data });
     }
   }
 
-  createMainWindow() {
-    this.mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      minWidth: 1000,
-      minHeight: 700,
-      icon: path.join(__dirname, '../renderer/assets/icons/icon.png'),
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        enableRemoteModule: false,
-        preload: path.join(__dirname, 'preload.js'),
-        webSecurity: true,
-        allowRunningInsecureContent: false,
-        sandbox: false
-      },
-      show: false,
-      autoHideMenuBar: false
-    });
-
-    this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-
-    this.mainWindow.once('ready-to-show', () => {
-      this.mainWindow.show();
-      
-      // Show app version in title
-      const currentVersion = app.getVersion();
-      this.mainWindow.setTitle(`School Bell System v${currentVersion}`);
-    });
-
-    // Handle window close - minimize to tray instead of quitting
-    this.mainWindow.on('close', (event) => {
-      if (!this.isQuitting) {
-        event.preventDefault();
-        this.hideMainWindow();
-        
-        // Show notification on first minimize
-        if (!this.hasShownTrayNotification) {
-          this.showTrayNotification(
-            'School Bell System', 
-            'App minimized to system tray. Double-click the tray icon to restore.'
-          );
-          this.hasShownTrayNotification = true;
-        }
-      }
-    });
-
-    this.mainWindow.on('closed', () => {
-      this.mainWindow = null;
-    });
-  }
-
+  /**
+   * Application menu
+   */
   createAppMenu() {
     const template = [
       {
         label: 'File',
         submenu: [
           {
-            label: 'New Schedule Event',
+            label: 'New Event',
             accelerator: 'CmdOrCtrl+N',
             click: () => this.sendMenuAction('new-event')
           },
           { type: 'separator' },
           {
-            label: 'Upload Audio File',
+            label: 'Upload Audio',
             accelerator: 'CmdOrCtrl+U',
             click: () => this.sendMenuAction('upload-audio')
           },
@@ -751,7 +847,7 @@ class SchoolBellApp {
             click: (menuItem) => this.toggleAutoLaunch(menuItem.checked)
           },
           {
-            label: 'Show in System Tray',
+            label: 'Run in Background',
             type: 'checkbox',
             checked: true,
             enabled: false
@@ -768,63 +864,22 @@ class SchoolBellApp {
           { type: 'separator' },
           {
             label: 'User Guide',
-            click: () => {
-              shell.openExternal('https://github.com/AtizaD/school-bell-system#readme');
-            }
+            click: () => shell.openExternal('https://github.com/AtizaD/school-bell-system#readme')
           },
           {
             label: 'Report Issue',
-            click: () => {
-              shell.openExternal('https://github.com/AtizaD/school-bell-system/issues');
-            }
-          },
-          {
-            label: 'View on GitHub',
-            click: () => {
-              shell.openExternal('https://github.com/AtizaD/school-bell-system');
-            }
+            click: () => shell.openExternal('https://github.com/AtizaD/school-bell-system/issues')
           },
           { type: 'separator' },
           {
-            label: 'About School Bell System',
-            click: () => {
-              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                const appVersion = app.getVersion();
-                const electronVersion = process.versions.electron;
-                const nodeVersion = process.versions.node;
-                const chromeVersion = process.versions.chrome;
-                const platform = process.platform;
-                const arch = process.arch;
-                
-                dialog.showMessageBox(this.mainWindow, {
-                  type: 'info',
-                  title: 'About School Bell System',
-                  message: 'School Bell Management System',
-                  detail: `Version: ${appVersion}\n` +
-                         `Build: ${this.isDevelopment ? 'Development' : 'Production'}\n` +
-                         `Platform: ${platform} (${arch})\n\n` +
-                         `Runtime Information:\n` +
-                         `• Electron: ${electronVersion}\n` +
-                         `• Node.js: ${nodeVersion}\n` +
-                         `• Chrome: ${chromeVersion}\n\n` +
-                         `Automated school bell scheduling system with audio playback control.\n\n` +
-                         `© 2025 AtizaD\n` +
-                         `Licensed under MIT License\n\n` +
-                         `GitHub: https://github.com/AtizaD/school-bell-system`,
-                  buttons: ['OK', 'Visit GitHub'],
-                  defaultId: 0
-                }).then((result) => {
-                  if (result.response === 1) {
-                    shell.openExternal('https://github.com/AtizaD/school-bell-system');
-                  }
-                });
-              }
-            }
+            label: 'About',
+            click: () => this.showAboutDialog()
           }
         ]
       }
     ];
 
+    // Development menu
     if (this.isDevelopment) {
       template.push({
         label: 'Development',
@@ -832,59 +887,14 @@ class SchoolBellApp {
           {
             label: 'Toggle DevTools',
             accelerator: 'F12',
-            click: () => {
-              if (this.mainWindow) {
-                this.mainWindow.webContents.toggleDevTools();
-              }
-            }
+            click: () => this.mainWindow?.webContents.toggleDevTools()
           },
-          { type: 'separator' },
           {
             label: 'Reload',
             accelerator: 'CmdOrCtrl+R',
-            click: () => {
-              if (this.mainWindow) {
-                this.mainWindow.webContents.reload();
-              }
-            }
-          },
-          {
-            label: 'Force Reload',
-            accelerator: 'CmdOrCtrl+Shift+R',
-            click: () => {
-              if (this.mainWindow) {
-                this.mainWindow.webContents.reloadIgnoringCache();
-              }
-            }
+            click: () => this.mainWindow?.webContents.reload()
           },
           { type: 'separator' },
-          {
-            label: 'Test Update Check',
-            click: () => this.checkForUpdates(true)
-          },
-          {
-            label: 'Reset App Data',
-            click: async () => {
-              const result = await dialog.showMessageBox(this.mainWindow, {
-                type: 'warning',
-                title: 'Reset App Data',
-                message: 'This will clear all data and restart the app',
-                detail: 'This action cannot be undone. Continue?',
-                buttons: ['Cancel', 'Reset'],
-                defaultId: 0,
-                cancelId: 0
-              });
-              
-              if (result.response === 1) {
-                try {
-                  await this.dataManager.importData(JSON.stringify(this.dataManager.defaultData));
-                  this.mainWindow.reload();
-                } catch (error) {
-                  dialog.showErrorBox('Reset Failed', error.message);
-                }
-              }
-            }
-          },
           {
             label: 'Restart App',
             accelerator: 'CmdOrCtrl+Alt+R',
@@ -897,27 +907,166 @@ class SchoolBellApp {
       });
     }
 
-    if (process.platform === 'darwin') {
-      template.unshift({
-        label: app.getName(),
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' }
-        ]
-      });
-    }
-
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
   }
 
+  showAboutDialog() {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+    const appVersion = app.getVersion();
+    const electronVersion = process.versions.electron;
+    const nodeVersion = process.versions.node;
+    const platform = process.platform;
+    const arch = process.arch;
+
+    dialog.showMessageBox(this.mainWindow, {
+      type: 'info',
+      title: 'About School Bell System',
+      message: 'School Bell Management System',
+      detail: `Version: ${appVersion}\n` +
+             `Platform: ${platform} (${arch})\n` +
+             `Electron: ${electronVersion}\n` +
+             `Node.js: ${nodeVersion}\n\n` +
+             `Automated school bell scheduling with audio playback.\n\n` +
+             `© 2025 AtizaD\n` +
+             `Licensed under MIT License`,
+      buttons: ['OK', 'GitHub'],
+      defaultId: 0
+    }).then((result) => {
+      if (result.response === 1) {
+        shell.openExternal('https://github.com/AtizaD/school-bell-system');
+      }
+    });
+  }
+
+  /**
+   * Quit confirmation and cleanup
+   */
+  showQuitConfirmation() {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+      this.confirmQuit();
+      return;
+    }
+
+    const options = {
+      type: 'question',
+      title: 'Quit School Bell System',
+      message: 'Are you sure you want to quit?',
+      detail: 'This will stop all scheduled bell events until you restart the application.',
+      buttons: ['Cancel', 'Minimize to Tray', 'Quit'],
+      defaultId: 1,
+      cancelId: 0
+    };
+
+    dialog.showMessageBox(this.mainWindow, options).then((result) => {
+      switch (result.response) {
+        case 1: // Minimize to Tray
+          this.hideMainWindow();
+          this.showTrayNotification('Running in Background', 'School Bell System continues in the system tray');
+          break;
+        case 2: // Quit
+          this.confirmQuit();
+          break;
+      }
+    });
+  }
+
+  confirmQuit() {
+    console.log('Confirming quit...');
+    this.isQuitting = true;
+    app.quit();
+  }
+
+  /**
+   * Cleanup resources
+   */
+  async cleanup() {
+    console.log('🧹 Cleaning up application resources...');
+
+    try {
+      // Clear intervals
+      if (this.updateCheckInterval) {
+        clearInterval(this.updateCheckInterval);
+        this.updateCheckInterval = null;
+      }
+
+      // Cleanup modules
+      if (this.audioPlayer) {
+        await this.audioPlayer.cleanup();
+      }
+
+      if (this.scheduler) {
+        this.scheduler.stop();
+      }
+
+      if (this.authManager) {
+        this.authManager.cleanup();
+      }
+
+      // Log shutdown
+      if (this.dataManager) {
+        this.dataManager.logActivitySafe('app_shutdown', 'Application shutdown');
+      }
+
+      // Destroy tray
+      if (this.tray) {
+        this.tray.destroy();
+        this.tray = null;
+      }
+
+      console.log('✅ Cleanup complete');
+
+    } catch (error) {
+      console.error('❌ Cleanup error:', error);
+    }
+  }
+
+  /**
+   * Error handlers
+   */
+  handleUncaughtException(error) {
+    console.error('💥 Uncaught Exception:', error);
+    
+    if (this.dataManager) {
+      this.dataManager.logActivitySafe('uncaught_exception', error.message, error.stack);
+    }
+    
+    // Don't quit in production - try to recover
+    if (!this.isDevelopment) {
+      this.showTrayNotification('Error Detected', 'An error occurred but the app continues running');
+    }
+  }
+
+  handleUnhandledRejection(reason, promise) {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+    
+    if (this.dataManager) {
+      this.dataManager.logActivitySafe('unhandled_rejection', String(reason));
+    }
+  }
+
+  showFatalError(title, message) {
+    console.error(`💀 Fatal Error - ${title}: ${message}`);
+    
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      dialog.showErrorBox(title, `${message}\n\nThe application will now close.`);
+    }
+  }
+
+  /**
+   * Session management
+   */
+  handleSessionExpired() {
+    console.log('Session expired');
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('session-expired');
+    }
+  }
+
+  /**
+   * IPC Communication
+   */
   sendMenuAction(action) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('menu-action', action);
@@ -933,12 +1082,101 @@ class SchoolBellApp {
     }
   }
 
+  /**
+   * Data management
+   */
+  async exportData() {
+    try {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+      const result = await dialog.showSaveDialog(this.mainWindow, {
+        title: 'Export School Bell Data',
+        defaultPath: `school-bell-backup-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+
+      if (!result.canceled && result.filePath) {
+        const data = await this.dataManager.exportData();
+        await fs.writeFile(result.filePath, data);
+        
+        dialog.showMessageBox(this.mainWindow, {
+          type: 'info',
+          title: 'Export Successful',
+          message: 'Data exported successfully!',
+          detail: `Data saved to: ${result.filePath}`
+        });
+
+        this.dataManager.logActivitySafe('data_exported', `Data exported to ${result.filePath}`);
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      if (!this.mainWindow?.isDestroyed()) {
+        dialog.showErrorBox('Export Failed', `Failed to export data: ${error.message}`);
+      }
+    }
+  }
+
+  async importData() {
+    try {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+
+      const result = await dialog.showOpenDialog(this.mainWindow, {
+        title: 'Import School Bell Data',
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const confirmResult = await dialog.showMessageBox(this.mainWindow, {
+          type: 'warning',
+          title: 'Confirm Import',
+          message: 'This will replace all current data!',
+          detail: 'Are you sure? This action cannot be undone.',
+          buttons: ['Cancel', 'Import'],
+          defaultId: 0
+        });
+
+        if (confirmResult.response === 1) {
+          const data = await fs.readFile(result.filePaths[0], 'utf8');
+          await this.dataManager.importData(data);
+          
+          dialog.showMessageBox(this.mainWindow, {
+            type: 'info',
+            title: 'Import Successful',
+            message: 'Data imported successfully!',
+            detail: 'The application will reload.'
+          });
+
+          await this.scheduler.reloadSchedules();
+          this.mainWindow.reload();
+        }
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      if (!this.mainWindow?.isDestroyed()) {
+        dialog.showErrorBox('Import Failed', `Failed to import data: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Setup IPC handlers
+   */
   setupIPC() {
-    // Existing IPC handlers...
+    console.log('Setting up IPC handlers...');
+
+    // Data operations
     ipcMain.handle('data-get', async (event, section) => {
       return this.dataManager.getData(section);
     });
 
+    // Schedule operations
     ipcMain.handle('schedule-get', async (event, day) => {
       return this.dataManager.getSchedule(day);
     });
@@ -961,6 +1199,7 @@ class SchoolBellApp {
       return result;
     });
 
+    // Audio operations
     ipcMain.handle('audio-get-files', async () => {
       return this.dataManager.getAudioFiles();
     });
@@ -978,10 +1217,70 @@ class SchoolBellApp {
           const filePath = path.join(audioPath, audioFile.filename);
           await fs.unlink(filePath);
         } catch (fileError) {
-          // Silent file cleanup failure
+          console.warn('Failed to delete audio file:', fileError.message);
         }
       }
       return await this.dataManager.deleteAudioFile(audioId);
+    });
+
+    ipcMain.handle('audio-bulk-delete', async (event, audioIds) => {
+      const audioFiles = this.dataManager.getAudioFiles();
+      const settings = this.dataManager.getSettings();
+      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      
+      let deletedCount = 0;
+      let errors = [];
+
+      for (const audioId of audioIds) {
+        try {
+          const audioFile = audioFiles.find(a => a.id === audioId);
+          
+          if (audioFile) {
+            // Try to delete the physical file
+            try {
+              const filePath = path.join(audioPath, audioFile.filename);
+              await fs.unlink(filePath);
+            } catch (fileError) {
+              console.warn(`Failed to delete audio file ${audioFile.filename}:`, fileError.message);
+              errors.push({
+                id: audioId,
+                filename: audioFile.filename,
+                error: fileError.message
+              });
+            }
+
+            // Remove from database
+            await this.dataManager.deleteAudioFile(audioId);
+            deletedCount++;
+            
+            this.dataManager.logActivitySafe('audio_file_deleted', `Bulk deleted: ${audioFile.name}`);
+          } else {
+            errors.push({
+              id: audioId,
+              error: 'Audio file not found in database'
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to delete audio file ${audioId}:`, error);
+          errors.push({
+            id: audioId,
+            error: error.message
+          });
+        }
+      }
+
+      const result = {
+        success: true,
+        deletedCount,
+        totalRequested: audioIds.length,
+        errors: errors.length > 0 ? errors : null
+      };
+
+      this.dataManager.logActivitySafe('audio_bulk_delete', 
+        `Bulk delete completed: ${deletedCount}/${audioIds.length} files deleted`
+      );
+
+      return result;
     });
 
     ipcMain.handle('upload-audio-file', async (event, fileData) => {
@@ -993,17 +1292,46 @@ class SchoolBellApp {
       
       const filePath = path.join(audioPath, filename);
       
+      // Check if file exists and handle overwrite
+      let fileExists = false;
       try {
         await fs.access(filePath);
+        fileExists = true;
         const overwrite = await this.confirmOverwrite(filename);
+        
         if (!overwrite) {
           throw new Error('Upload cancelled - file already exists');
         }
       } catch (accessError) {
         // File doesn't exist, continue
+        if (accessError.code !== 'ENOENT') {
+          throw new Error(`Cannot access file location: ${accessError.message}`);
+        }
       }
       
-      await fs.writeFile(filePath, buffer);
+      // If file exists and we're overwriting, stop any audio that might be using it
+      if (fileExists) {
+        try {
+          await this.audioPlayer.stop();
+        } catch (stopError) {
+          console.warn('Failed to stop audio player before overwrite:', stopError.message);
+        }
+      }
+      
+      // Try to write the file with better error handling
+      try {
+        await fs.writeFile(filePath, buffer);
+      } catch (writeError) {
+        if (writeError.code === 'EPERM') {
+          throw new Error(`Permission denied. The file "${filename}" may be in use by another application or you don't have write permissions to this location.`);
+        } else if (writeError.code === 'EACCES') {
+          throw new Error(`Access denied. Check file permissions for "${filename}".`);
+        } else if (writeError.code === 'EBUSY') {
+          throw new Error(`File "${filename}" is currently in use. Please close any applications using this file and try again.`);
+        } else {
+          throw new Error(`Failed to write file "${filename}": ${writeError.message}`);
+        }
+      }
       const stats = await fs.stat(filePath);
       
       const audioData = {
@@ -1015,12 +1343,29 @@ class SchoolBellApp {
         uploadedAt: new Date().toISOString()
       };
       
-      const result = await this.dataManager.addAudioFile(audioData);
+      // Check if we're replacing an existing file
+      let result;
+      if (fileExists) {
+        // Find existing audio file record and update it
+        const existingAudio = this.dataManager.getAudioFiles().find(af => af.filename === filename);
+        if (existingAudio) {
+          // Update existing record
+          result = await this.dataManager.updateAudioFile(existingAudio.id, audioData);
+          this.dataManager.logActivitySafe('audio_file_replaced', `Replaced audio file "${displayName}"`);
+        } else {
+          // File exists on disk but not in database, add new record
+          result = await this.dataManager.addAudioFile(audioData);
+        }
+      } else {
+        // New file, add to database
+        result = await this.dataManager.addAudioFile(audioData);
+      }
       this.dataManager.logActivitySafe('audio_file_uploaded', `Uploaded: ${displayName}`);
       
       return result;
     });
 
+    // Template operations
     ipcMain.handle('template-get-all', async () => {
       return this.dataManager.getTemplates();
     });
@@ -1033,6 +1378,7 @@ class SchoolBellApp {
       return await this.dataManager.deleteTemplate(templateId);
     });
 
+    // Settings operations
     ipcMain.handle('settings-get', async () => {
       return this.dataManager.getSettings();
     });
@@ -1043,6 +1389,7 @@ class SchoolBellApp {
       return result;
     });
 
+    // Log operations
     ipcMain.handle('logs-get', async (event, limit) => {
       return this.dataManager.getLogs(limit);
     });
@@ -1051,6 +1398,7 @@ class SchoolBellApp {
       return await this.dataManager.clearLogs();
     });
 
+    // Dialog operations
     ipcMain.handle('show-save-dialog', async (event, options) => {
       return await dialog.showSaveDialog(this.mainWindow, options);
     });
@@ -1059,6 +1407,7 @@ class SchoolBellApp {
       return await dialog.showOpenDialog(this.mainWindow, options);
     });
 
+    // Audio player operations
     ipcMain.handle('audio-test', async (event, filename) => {
       return await this.audioPlayer.testAudio(filename);
     });
@@ -1072,7 +1421,7 @@ class SchoolBellApp {
     });
 
     ipcMain.handle('audio-set-volume', async (event, volume) => {
-      this.audioPlayer.setVolume(volume);
+      await this.audioPlayer.setVolume(volume);
       await this.dataManager.updateSettings({ volume: volume });
       return this.audioPlayer.getVolume();
     });
@@ -1089,6 +1438,58 @@ class SchoolBellApp {
       return await this.audioPlayer.testSystemAudio();
     });
 
+    ipcMain.handle('audio-get-file-url', async (event, filename) => {
+      const settings = this.dataManager.getSettings();
+      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const filePath = path.join(audioPath, filename);
+      
+      try {
+        await fs.access(filePath);
+        
+        // Read the file as base64 and create a data URL
+        const fileBuffer = await fs.readFile(filePath);
+        const fileExtension = path.extname(filename).toLowerCase();
+        
+        // Map file extensions to MIME types
+        const mimeTypes = {
+          '.mp3': 'audio/mpeg',
+          '.wav': 'audio/wav',
+          '.m4a': 'audio/mp4',
+          '.ogg': 'audio/ogg',
+          '.aac': 'audio/aac'
+        };
+        
+        const mimeType = mimeTypes[fileExtension] || 'audio/mpeg';
+        const base64Data = fileBuffer.toString('base64');
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
+        
+        return { url: dataUrl };
+      } catch (error) {
+        throw new Error(`Audio file not found: ${filename}`);
+      }
+    });
+
+    ipcMain.handle('audio-get-file-path', async (event, filename) => {
+      const settings = this.dataManager.getSettings();
+      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const filePath = path.join(audioPath, filename);
+      
+      try {
+        await fs.access(filePath);
+        return filePath;
+      } catch (error) {
+        throw new Error(`Audio file not found: ${filename}`);
+      }
+    });
+
+    ipcMain.handle('audio-play-scheduled', async (event, eventData) => {
+      // This handler triggers HTML5 audio playback in the renderer process
+      // Send event to renderer to play the scheduled audio using HTML5
+      this.mainWindow.webContents.send('scheduled-audio', eventData);
+      return { success: true };
+    });
+
+    // Scheduler operations
     ipcMain.handle('scheduler-get-status', async () => {
       return this.scheduler.getStatus();
     });
@@ -1171,67 +1572,7 @@ class SchoolBellApp {
       return result;
     });
 
-    ipcMain.handle('auth-reset-setup', async () => {
-      if (this.isDevelopment) {
-        const result = await this.authManager.resetSetup();
-        this.dataManager.logActivitySafe('setup_reset', 'Authentication setup reset (development mode)');
-        return result;
-      } else {
-        throw new Error('Reset setup is only available in development mode');
-      }
-    });
-
-    // Password recovery handlers
-    ipcMain.handle('auth-generate-recovery-token', async () => {
-      return await this.authManager.generateRecoveryToken();
-    });
-
-    ipcMain.handle('auth-reset-password-with-token', async (event, recoveryToken, newPassword) => {
-      return await this.authManager.resetPasswordWithToken(recoveryToken, newPassword);
-    });
-
-    ipcMain.handle('auth-emergency-reset', async () => {
-      if (this.isDevelopment) {
-        return await this.authManager.emergencyReset();
-      } else {
-        throw new Error('Emergency reset only available in development mode');
-      }
-    });
-
-    ipcMain.handle('auth-emergency-login', async (event, emergencyCode) => {
-      return await this.authManager.emergencyLogin(emergencyCode);
-    });
-
-    // AUTO-UPDATER IPC HANDLERS
-    ipcMain.handle('updater-check-for-updates', async () => {
-      return await this.checkForUpdates(true);
-    });
-
-    ipcMain.handle('updater-download-update', async () => {
-      this.downloadUpdate();
-      return { success: true };
-    });
-
-    ipcMain.handle('updater-install-update', async () => {
-      this.installUpdate();
-      return { success: true };
-    });
-
-    ipcMain.handle('updater-get-version', async () => {
-      return {
-        current: app.getVersion(),
-        isDevelopment: this.isDevelopment,
-        updateAvailable: this.updateAvailable
-      };
-    });
-
-    ipcMain.handle('updater-restart-app', async () => {
-      app.relaunch();
-      app.quit();
-      return { success: true };
-    });
-
-    // SYSTEM TRAY AND STARTUP IPC HANDLERS
+    // System operations
     ipcMain.handle('system-get-auto-launch-status', async () => {
       return this.getAutoLaunchStatus();
     });
@@ -1255,8 +1596,42 @@ class SchoolBellApp {
       this.confirmQuit();
       return { success: true };
     });
+
+    // Updater operations
+    ipcMain.handle('updater-check-for-updates', async () => {
+      return await this.checkForUpdates(true);
+    });
+
+    ipcMain.handle('updater-download-update', async () => {
+      autoUpdater.downloadUpdate();
+      return { success: true };
+    });
+
+    ipcMain.handle('updater-install-update', async () => {
+      autoUpdater.quitAndInstall(false, true);
+      return { success: true };
+    });
+
+    ipcMain.handle('updater-get-version', async () => {
+      return {
+        current: app.getVersion(),
+        isDevelopment: this.isDevelopment,
+        updateAvailable: this.updateAvailable
+      };
+    });
+
+    ipcMain.handle('updater-restart-app', async () => {
+      app.relaunch();
+      app.quit();
+      return { success: true };
+    });
+
+    console.log('✅ IPC handlers configured');
   }
 
+  /**
+   * Utility methods
+   */
   getFileType(filename) {
     const extension = path.extname(filename).toLowerCase();
     const typeMap = {
@@ -1272,113 +1647,50 @@ class SchoolBellApp {
   async confirmOverwrite(filename) {
     try {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        // Bring main window to front first
+        if (this.mainWindow.isMinimized()) {
+          this.mainWindow.restore();
+        }
+        this.mainWindow.focus();
+        
         const result = await dialog.showMessageBox(this.mainWindow, {
-          type: 'question',
-          title: 'File Already Exists',
+          type: 'warning',
+          title: 'Replace Existing File?',
           message: `The file "${filename}" already exists.`,
-          detail: 'Do you want to replace it?',
-          buttons: ['Cancel', 'Replace'],
+          detail: 'Do you want to replace the existing file with the new one? This action cannot be undone.',
+          buttons: ['Cancel', 'Replace File'],
           defaultId: 0,
-          cancelId: 0
+          cancelId: 0,
+          noLink: true
         });
+        
         return result.response === 1;
       }
       return false;
     } catch (error) {
+      console.error('Error showing overwrite confirmation:', error);
       return false;
-    }
-  }
-
-  async exportData() {
-    try {
-      if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-
-      const result = await dialog.showSaveDialog(this.mainWindow, {
-        title: 'Export School Bell Data',
-        defaultPath: `school-bell-backup-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [
-          { name: 'JSON Files', extensions: ['json'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
-      });
-
-      if (!result.canceled && result.filePath) {
-        const data = await this.dataManager.exportData();
-        await fs.writeFile(result.filePath, data);
-        
-        dialog.showMessageBox(this.mainWindow, {
-          type: 'info',
-          title: 'Export Successful',
-          message: 'Data exported successfully!',
-          detail: `Data saved to: ${result.filePath}`
-        });
-
-        this.dataManager.logActivitySafe('data_exported', `Data exported to ${result.filePath}`);
-      }
-    } catch (error) {
-      if (!this.mainWindow.isDestroyed()) {
-        dialog.showErrorBox('Export Failed', `Failed to export data: ${error.message}`);
-      }
-    }
-  }
-
-  async importData() {
-    try {
-      if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-
-      const result = await dialog.showOpenDialog(this.mainWindow, {
-        title: 'Import School Bell Data',
-        filters: [
-          { name: 'JSON Files', extensions: ['json'] },
-          { name: 'All Files', extensions: ['*'] }
-        ],
-        properties: ['openFile']
-      });
-
-      if (!result.canceled && result.filePaths.length > 0) {
-        const confirmResult = await dialog.showMessageBox(this.mainWindow, {
-          type: 'warning',
-          title: 'Confirm Import',
-          message: 'This will replace all current data!',
-          detail: 'Are you sure you want to import this data? This action cannot be undone.',
-          buttons: ['Cancel', 'Import'],
-          defaultId: 0,
-          cancelId: 0
-        });
-
-        if (confirmResult.response === 1) {
-          const data = await fs.readFile(result.filePaths[0], 'utf8');
-          await this.dataManager.importData(data);
-          
-          dialog.showMessageBox(this.mainWindow, {
-            type: 'info',
-            title: 'Import Successful',
-            message: 'Data imported successfully!',
-            detail: 'The application will reload to reflect the changes.'
-          });
-
-          try {
-            await this.scheduler.reloadSchedules();
-          } catch (error) {
-            // Silent scheduler reload failure
-          }
-
-          this.mainWindow.reload();
-        }
-      }
-    } catch (error) {
-      if (!this.mainWindow.isDestroyed()) {
-        dialog.showErrorBox('Import Failed', `Failed to import data: ${error.message}`);
-      }
     }
   }
 }
 
+// Initialize application
 const schoolBellApp = new SchoolBellApp();
+
+// Start the application
 schoolBellApp.initialize();
 
+// Handle macOS activation
 app.on('activate', () => {
   if (schoolBellApp.mainWindow === null) {
     schoolBellApp.createMainWindow();
   }
 });
+
+// Graceful shutdown
+process.on('exit', () => {
+  console.log('🔔 School Bell System shutting down...');
+  schoolBellApp.cleanup();
+});
+
+console.log('🔔 School Bell System - Production Main Process Started');

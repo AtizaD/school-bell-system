@@ -300,6 +300,33 @@ class DataManager {
     return audioFile;
   }
   
+  async updateAudioFile(audioId, updates) {
+    const audioFiles = this.getData('audioFiles');
+    const audioIndex = audioFiles.findIndex(a => a.id === audioId);
+    
+    if (audioIndex === -1) {
+      throw new Error(`Audio file ${audioId} not found`);
+    }
+    
+    // Keep the original ID and creation timestamp
+    const originalId = audioFiles[audioIndex].id;
+    const originalCreatedAt = audioFiles[audioIndex].createdAt || audioFiles[audioIndex].uploadedAt;
+    
+    // Update the audio file data
+    audioFiles[audioIndex] = {
+      ...audioFiles[audioIndex],
+      ...updates,
+      id: originalId,
+      createdAt: originalCreatedAt,
+      updatedAt: new Date().toISOString()
+    };
+    
+    await this.saveData();
+    this.logActivitySafe('audio_file_updated', `Updated audio file "${audioFiles[audioIndex].name}"`);
+    
+    return audioFiles[audioIndex];
+  }
+
   async deleteAudioFile(audioId) {
     const audioFiles = this.getData('audioFiles');
     const audioIndex = audioFiles.findIndex(a => a.id === audioId);
