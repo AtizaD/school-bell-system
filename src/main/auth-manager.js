@@ -174,6 +174,20 @@ class AuthManager {
       return this.decryptData(encryptedObj);
     } catch (error) {
       console.error('Failed to load auth data:', error.message);
+      
+      // If it's a machine binding error, delete the auth file to allow fresh setup
+      if (error.message.includes('bound to a different machine')) {
+        console.log('Auth data from different machine detected, allowing fresh setup...');
+        try {
+          await fs.unlink(this.authFilePath);
+          console.log('Old auth data removed, fresh setup will be required');
+        } catch (unlinkError) {
+          console.warn('Could not remove old auth data:', unlinkError.message);
+        }
+        return null; // Return null instead of throwing to allow setup
+      }
+      
+      // For other errors, still throw
       throw new Error(`Failed to load auth data: ${error.message}`);
     }
   }

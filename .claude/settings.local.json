@@ -6,7 +6,13 @@
       "Bash(node -c \"src/renderer/js/html5-audio.js\")",
       "Bash(node -c \"src/renderer/js/settings.js\")",
       "Bash(grep:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(git push:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run clean:*)",
+      "Bash(npx electron-builder:*)",
+      "Bash(powershell:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }

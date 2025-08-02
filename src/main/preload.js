@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   platform: process.platform,
+  isDevelopment: () => ipcRenderer.invoke('is-development-mode'),
   
   handleError: (error, context = 'Unknown') => {
     return {
@@ -116,6 +117,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   }
 });
+
+// Note: Scheduled audio listener is set up in DOMContentLoaded with delay
 
 window.addEventListener('DOMContentLoaded', () => {
   if (window.electronAPI && window.electronAPI.onAudioNotification) {
@@ -134,33 +137,8 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (window.electronAPI && window.electronAPI.onScheduledAudio) {
-    window.electronAPI.onScheduledAudio(async (event, eventData) => {
-      try {
-        console.log('Received scheduled audio event:', eventData);
-        
-        if (window.html5AudioPlayer && eventData.audioSequence) {
-          // Show notification for scheduled event
-          if (window.app && window.app.showNotification) {
-            window.app.showNotification(`Playing scheduled event: ${eventData.name}`, 'info');
-          }
-          
-          // Play the audio sequence using HTML5 audio
-          await window.html5AudioPlayer.playAudioSequence(eventData.audioSequence);
-          
-          // Notify completion
-          if (window.app && window.app.showNotification) {
-            window.app.showNotification(`Completed scheduled event: ${eventData.name}`, 'success');
-          }
-        }
-      } catch (error) {
-        console.error('Scheduled audio playback failed:', error);
-        if (window.app && window.app.showNotification) {
-          window.app.showNotification(`Scheduled audio failed: ${error.message}`, 'error');
-        }
-      }
-    });
-  }
+  // Note: Scheduled audio listener is now set up in app.js after full initialization
+
 });
 
 window.addEventListener('unhandledrejection', (event) => {

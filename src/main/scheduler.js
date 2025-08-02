@@ -392,10 +392,13 @@ class Scheduler {
 
     return new Promise((resolve, reject) => {
       // Send the event to renderer process
+      console.log('Sending scheduled-audio IPC message for event:', event.name);
+      console.log('Audio sequence:', event.audioSequence);
       mainWindow.webContents.send('scheduled-audio', event);
       
       // Set up a timeout for the audio sequence
       const audioSequenceTimeMs = this.calculateAudioSequenceTime(event.audioSequence);
+      console.log('Expected audio duration:', audioSequenceTimeMs, 'ms');
       const timeout = setTimeout(() => {
         this.dataManager.logActivitySafe('schedule_audio_completed', 
           `Scheduled audio completed for "${event.name}"`

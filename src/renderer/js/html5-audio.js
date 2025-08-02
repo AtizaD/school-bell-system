@@ -16,6 +16,8 @@
 
     async playAudio(filename) {
       try {
+        console.log('HTML5 playAudio called with:', filename);
+        
         // Stop any currently playing audio
         await this.stopAudio();
 
@@ -27,6 +29,8 @@
         // Set up audio properties
         this.audio.volume = this.volume / 100;
         this.audio.preload = 'auto';
+        
+        console.log('HTML5 audio volume set to:', this.audio.volume);
 
         // Create file URL from the audio directory
         const audioUrl = await this.getAudioFileUrl(filename);
@@ -46,10 +50,20 @@
 
           const onCanPlay = async () => {
             try {
+              console.log('HTML5 audio canplaythrough - attempting to play...');
+              console.log('Audio properties:', {
+                duration: this.audio.duration,
+                volume: this.audio.volume,
+                muted: this.audio.muted,
+                paused: this.audio.paused
+              });
+              
               await this.audio.play();
+              console.log('HTML5 audio.play() succeeded');
               cleanup();
               resolve({ success: true, filename });
             } catch (playError) {
+              console.error('HTML5 audio.play() failed:', playError);
               cleanup();
               this.isPlaying = false;
               this.currentFile = null;

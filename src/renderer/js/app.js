@@ -278,6 +278,10 @@ class SchoolBellApp {
     this.elements.modalOverlay.classList.remove('active');
     this.elements.modalOverlay.onclick = null;
     this.currentModalClosable = true; // Reset for next modal
+    
+    // BUGFIX: Reset editing state when modal is closed
+    this.editingEventId = null;
+    this.audioSequence = [];
   }
 
   showNotification(message, type = 'info') {
@@ -1133,6 +1137,14 @@ class SchoolBellApp {
 
   async checkAuthStatus() {
     try {
+      // Skip authentication in development mode
+      const isDevelopment = await window.electronAPI.isDevelopment();
+      if (isDevelopment) {
+        this.isSetupComplete = true;
+        this.isAuthenticated = true;
+        return;
+      }
+      
       this.isSetupComplete = await window.electronAPI.isSetupComplete();
       this.isAuthenticated = await window.electronAPI.isLoggedIn();
     } catch (error) {
@@ -1915,3 +1927,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log('✅ Complete School Bell System app.js loaded');
+
+// Set up scheduled audio listener now that everything is ready
+setTimeout(() => {
+  if (window.electronAPI && window.electronAPI.onScheduledAudio) {
+    console.log('🔔 Setting up scheduled audio listener from app.js...');
+    
+    window.electronAPI.onScheduledAudio(async (event, eventData) => {
+      try {
+        console.log('📢 Received scheduled audio event:', eventData);
+        
+        if (window.html5AudioPlayer && eventData.audioSequence) {
+          if (window.app && window.app.showNotification) {
+            window.app.showNotification(`Playing scheduled event: ${eventData.name}`, 'info');
+          }
+          
+          console.log('🎵 Starting HTML5 audio sequence playback...');
+          await window.html5AudioPlayer.playAudioSequence(eventData.audioSequence);
+          console.log('✅ HTML5 audio sequence playback completed');
+          
+          if (window.app && window.app.showNotification) {
+            window.app.showNotification(`Completed scheduled event: ${eventData.name}`, 'success');
+          }
+        } else {
+          console.warn('❌ HTML5 audio player not available or no audio sequence');
+        }
+      } catch (error) {
+        console.error('❌ Scheduled audio playbook failed:', error);
+        if (window.app && window.app.showNotification) {
+          window.app.showNotification(`Scheduled audio failed: ${error.message}`, 'error');
+        }
+      }
+    });
+    
+    console.log('🔔 Scheduled audio listener is now active!');
+  } else {
+    console.warn('⚠️ electronAPI not available in app.js setup');
+  }
+}, 500); // Wait 500ms after app loads

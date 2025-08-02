@@ -1,5 +1,19 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, Notification } = require('electron');
-const { autoUpdater } = require('electron-updater');
+
+// Optional auto-updater - gracefully handle if not available
+let autoUpdater = null;
+try {
+  autoUpdater = require('electron-updater').autoUpdater;
+  console.log('Auto-updater loaded successfully');
+} catch (error) {
+  console.warn('Auto-updater not available:', error.message);
+  autoUpdater = {
+    checkForUpdatesAndNotify: () => Promise.resolve(),
+    on: () => {},
+    setFeedURL: () => {},
+    checkForUpdates: () => Promise.resolve()
+  };
+}
 const path = require('path');
 const fs = require('fs').promises;
 const DataManager = require('./data-manager');
@@ -1174,6 +1188,10 @@ class SchoolBellApp {
     // Data operations
     ipcMain.handle('data-get', async (event, section) => {
       return this.dataManager.getData(section);
+    });
+
+    ipcMain.handle('is-development-mode', () => {
+      return this.isDevelopment;
     });
 
     // Schedule operations

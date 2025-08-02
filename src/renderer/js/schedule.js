@@ -163,12 +163,15 @@ function extendAppWithScheduleMethods(app) {
     }
     
     const html = this.audioSequence.map((item, index) => `
-      <div class="audio-item">
+      <div class="audio-item" draggable="true" data-index="${index}">
+        <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
         <div class="audio-info">
           <span class="audio-name">${item.audioFile}</span>
           <span class="audio-repeat">×${item.repeat}</span>
         </div>
         <div class="audio-controls">
+          <button type="button" onclick="app.moveAudio(${index}, -1)" title="Move Up">↑</button>
+          <button type="button" onclick="app.moveAudio(${index}, 1)" title="Move Down">↓</button>
           <button type="button" onclick="app.changeRepeat(${index}, -1)" title="Decrease">−</button>
           <button type="button" onclick="app.changeRepeat(${index}, 1)" title="Increase">+</button>
           <button type="button" onclick="app.previewAudio('${item.audioFile}')" title="Preview">▶</button>
@@ -178,6 +181,71 @@ function extendAppWithScheduleMethods(app) {
     `).join('');
     
     container.innerHTML = html;
+    this.setupAudioDragAndDrop();
+  };
+
+  /**
+   * Move audio item up or down
+   */
+  app.moveAudio = function(index, direction) {
+    const newIndex = index + direction;
+    
+    if (newIndex < 0 || newIndex >= this.audioSequence.length) return;
+    
+    // Swap items
+    const temp = this.audioSequence[index];
+    this.audioSequence[index] = this.audioSequence[newIndex];
+    this.audioSequence[newIndex] = temp;
+    
+    this.updateAudioDisplay();
+    this.showNotification('Audio order updated', 'info');
+  };
+
+  /**
+   * Set up drag and drop for audio reordering
+   */
+  app.setupAudioDragAndDrop = function() {
+    const container = document.getElementById('selectedAudio');
+    let draggedIndex = null;
+    
+    container.addEventListener('dragstart', (e) => {
+      if (e.target.classList.contains('audio-item')) {
+        draggedIndex = parseInt(e.target.dataset.index);
+        e.target.style.opacity = '0.5';
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    });
+    
+    container.addEventListener('dragend', (e) => {
+      if (e.target.classList.contains('audio-item')) {
+        e.target.style.opacity = '1';
+      }
+    });
+    
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    
+    container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      
+      const dropTarget = e.target.closest('.audio-item');
+      if (dropTarget && draggedIndex !== null) {
+        const dropIndex = parseInt(dropTarget.dataset.index);
+        
+        if (draggedIndex !== dropIndex) {
+          // Move the dragged item to the drop position
+          const draggedItem = this.audioSequence.splice(draggedIndex, 1)[0];
+          this.audioSequence.splice(dropIndex, 0, draggedItem);
+          
+          this.updateAudioDisplay();
+          this.showNotification('Audio order updated', 'success');
+        }
+      }
+      
+      draggedIndex = null;
+    });
   };
 
   /**
@@ -586,17 +654,36 @@ document.addEventListener('DOMContentLoaded', () => {
     
     .audio-item {
       display: flex;
-      justify-content: space-between;
       align-items: center;
       padding: 0.75rem;
       background: white;
       border-radius: 6px;
       margin-bottom: 0.5rem;
       border: 1px solid #e5e7eb;
+      cursor: move;
+      transition: all 0.2s;
+    }
+    
+    .audio-item:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .audio-item:last-child {
       margin-bottom: 0;
+    }
+    
+    .drag-handle {
+      color: #9ca3af;
+      font-weight: bold;
+      margin-right: 0.75rem;
+      cursor: grab;
+      user-select: none;
+      font-size: 1.2em;
+    }
+    
+    .drag-handle:active {
+      cursor: grabbing;
     }
     
     .audio-info {
@@ -631,10 +718,12 @@ document.addEventListener('DOMContentLoaded', () => {
       transition: all 0.2s;
     }
     
-    .audio-controls button:nth-child(1) { background: #ef4444; color: white; }
-    .audio-controls button:nth-child(2) { background: #10b981; color: white; }
-    .audio-controls button:nth-child(3) { background: #3b82f6; color: white; }
-    .audio-controls button:nth-child(4) { background: #6b7280; color: white; }
+    .audio-controls button:nth-child(1) { background: #8b5cf6; color: white; } /* Move Up */
+    .audio-controls button:nth-child(2) { background: #8b5cf6; color: white; } /* Move Down */
+    .audio-controls button:nth-child(3) { background: #ef4444; color: white; } /* Decrease */
+    .audio-controls button:nth-child(4) { background: #10b981; color: white; } /* Increase */
+    .audio-controls button:nth-child(5) { background: #3b82f6; color: white; } /* Preview */
+    .audio-controls button:nth-child(6) { background: #6b7280; color: white; } /* Remove */
     
     .audio-controls button:hover {
       transform: scale(1.1);
