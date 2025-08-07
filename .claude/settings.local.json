@@ -12,7 +12,16 @@
       "Bash(npm run clean:*)",
       "Bash(npx electron-builder:*)",
       "Bash(powershell:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(gh release create:*)",
+      "Bash(npm run dev:*)",
+      "Bash(echo $env:APPDATA)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm install)",
+      "Bash(git commit:*)",
+      "Bash(git tag:*)",
+      "Bash(gh:*)"
     ],
     "deny": []
   }

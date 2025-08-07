@@ -218,11 +218,21 @@ class SchoolBellApp {
   }
 
   // FIXED: Updated showModal to properly handle closable parameter
-  showModal(title, content, buttons = null, closable = true) {
+  showModal(title, content, buttons = null, closable = true, cssClass = null) {
     if (!this.elements.modalOverlay) return;
 
     this.elements.modalTitle.textContent = title;
     this.elements.modalBody.innerHTML = content;
+
+    // Apply custom CSS class if provided
+    const modal = document.getElementById('modal');
+    if (modal) {
+      // Remove any existing custom classes
+      modal.className = 'modal';
+      if (cssClass) {
+        modal.classList.add(cssClass);
+      }
+    }
 
     // Show/hide close button based on closable parameter
     const closeButton = this.elements.modalClose;
@@ -1167,8 +1177,8 @@ class SchoolBellApp {
       <div class="first-time-setup">
         <div class="setup-header">
           <div class="setup-icon">🔔</div>
-          <h3>Welcome to School Bell System</h3>
-          <p>Let's set up your admin account to secure your bell system</p>
+          <h3>School Bell System Setup</h3>
+          <p>Create your admin account</p>
         </div>
         
         <form id="setupForm" class="setup-form">
@@ -1210,7 +1220,7 @@ class SchoolBellApp {
       }
     ];
 
-    this.showModal('First Time Setup', modalContent, buttons, false);
+    this.showModal('First Time Setup', modalContent, buttons, false, 'auth-modal');
     
     setTimeout(() => {
       document.getElementById('setupUsername').focus();
@@ -1324,8 +1334,8 @@ class SchoolBellApp {
       <div class="login-modal">
         <div class="login-header">
           <div class="login-icon">🔐</div>
-          <h3>School Bell System</h3>
-          <p>Please sign in to continue</p>
+          <h3>Sign In</h3>
+          <p>Enter your credentials</p>
         </div>
         
         <form id="loginForm" class="login-form">
@@ -1361,7 +1371,7 @@ class SchoolBellApp {
       }
     ];
 
-    this.showModal('Login Required', modalContent, buttons, false);
+    this.showModal('Login Required', modalContent, buttons, false, 'auth-modal');
     
     setTimeout(() => {
       document.getElementById('loginUsername').focus();
@@ -1795,27 +1805,56 @@ style.textContent = `
   }
 
   /* Auth Modal Styles */
+  .modal.auth-modal {
+    width: auto;
+    min-width: 380px;
+    max-width: 420px;
+  }
+
+  .modal.auth-modal .modal-header {
+    padding: 1rem 1.5rem;
+  }
+
+  .modal.auth-modal .modal-body {
+    padding: 1rem 1.5rem;
+  }
+
+  .modal.auth-modal .modal-footer {
+    padding: 1rem 1.5rem;
+  }
+  
   .first-time-setup, .login-modal {
-    max-width: 500px;
+    max-width: 380px;
     text-align: center;
   }
 
   .setup-header, .login-header {
-    margin-bottom: 2rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .setup-header h3, .login-header h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .setup-header p, .login-header p {
+    font-size: 0.9rem;
+    margin: 0;
+    color: #6c757d;
   }
 
   .setup-icon, .login-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
   }
 
   .setup-form, .login-form {
     text-align: left;
-    margin: 2rem 0;
+    margin: 0.75rem 0;
   }
 
   .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .form-group label {
@@ -1827,9 +1866,9 @@ style.textContent = `
 
   .form-group input {
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.5rem;
     border: 2px solid #e9ecef;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 0.9rem;
     transition: border-color 0.3s ease;
   }
@@ -1848,15 +1887,16 @@ style.textContent = `
 
   .security-info {
     background: #f8f9fa;
-    border-radius: 8px;
-    padding: 1rem;
-    margin-top: 1.5rem;
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
     border: 1px solid #e9ecef;
   }
 
   .security-info h4 {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.25rem;
     color: #495057;
+    font-size: 0.85rem;
   }
 
   .security-info ul {
@@ -1871,7 +1911,7 @@ style.textContent = `
   }
 
   .login-options {
-    margin: 1rem 0;
+    margin: 0.5rem 0;
   }
 
   .remember-me {
@@ -1883,10 +1923,11 @@ style.textContent = `
 
   .login-info {
     background: #e3f2fd;
-    border-radius: 8px;
-    padding: 1rem;
+    border-radius: 6px;
+    padding: 0.5rem;
     color: #1976d2;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
   }
   
   @media (max-width: 768px) {
@@ -1926,25 +1967,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-console.log('✅ Complete School Bell System app.js loaded');
 
 // Set up scheduled audio listener now that everything is ready
 setTimeout(() => {
   if (window.electronAPI && window.electronAPI.onScheduledAudio) {
-    console.log('🔔 Setting up scheduled audio listener from app.js...');
     
     window.electronAPI.onScheduledAudio(async (event, eventData) => {
       try {
-        console.log('📢 Received scheduled audio event:', eventData);
         
         if (window.html5AudioPlayer && eventData.audioSequence) {
           if (window.app && window.app.showNotification) {
             window.app.showNotification(`Playing scheduled event: ${eventData.name}`, 'info');
           }
           
-          console.log('🎵 Starting HTML5 audio sequence playback...');
           await window.html5AudioPlayer.playAudioSequence(eventData.audioSequence);
-          console.log('✅ HTML5 audio sequence playback completed');
           
           if (window.app && window.app.showNotification) {
             window.app.showNotification(`Completed scheduled event: ${eventData.name}`, 'success');
@@ -1960,7 +1996,6 @@ setTimeout(() => {
       }
     });
     
-    console.log('🔔 Scheduled audio listener is now active!');
   } else {
     console.warn('⚠️ electronAPI not available in app.js setup');
   }

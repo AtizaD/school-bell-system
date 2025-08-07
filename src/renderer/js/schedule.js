@@ -555,7 +555,6 @@ function extendAppWithScheduleMethods(app) {
     }
   };
 
-  console.log('✅ Clean schedule management loaded');
 }
 
 // Clean, minimal CSS

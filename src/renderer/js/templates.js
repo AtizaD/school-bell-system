@@ -896,7 +896,6 @@ function extendAppWithTemplateMethods(app) {
     });
   };
 
-  console.log('✅ Complete templates management loaded');
 }
 
 // Enhanced template styling

@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   platform: process.platform,
   isDevelopment: () => ipcRenderer.invoke('is-development-mode'),
+  restartApp: () => ipcRenderer.invoke('updater-restart-app'),
   
   handleError: (error, context = 'Unknown') => {
     return {

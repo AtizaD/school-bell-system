@@ -421,13 +421,16 @@ class Scheduler {
 
   calculateAudioSequenceTime(audioSequence) {
     // Calculate total time for audio sequence
-    // Default estimate: 3 seconds per audio file + 1 second delay between files
+    // Default estimate: 3 seconds per audio file + configurable delay between files
     if (!audioSequence || audioSequence.length === 0) return 0;
+    
+    const settings = this.dataManager.getSettings();
+    const audioRepeatInterval = (settings.audioRepeatInterval || 3) * 1000; // Convert to milliseconds
     
     return audioSequence.reduce((total, item) => {
       const estimatedDuration = 3000; // 3 seconds default per file
       const repeatCount = item.repeat || 1;
-      const delayBetween = 1000; // 1 second delay between repetitions
+      const delayBetween = audioRepeatInterval; // Configurable delay between repetitions
       return total + (estimatedDuration * repeatCount) + (delayBetween * (repeatCount - 1));
     }, 0);
   }

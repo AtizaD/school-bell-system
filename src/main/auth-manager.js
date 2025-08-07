@@ -419,23 +419,86 @@ class AuthManager {
    */
   async changePassword(currentPassword, newPassword) {
     try {
-      // Load current auth data
-      const authData = await this.loadAuthData();
-      const adminUser = authData.auth.adminUser;
-
-      // Verify current password using bcryptjs (synchronous method)
-      const passwordMatch = bcrypt.compareSync(currentPassword, adminUser.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Current password is incorrect');
+      const isDevelopment = process.argv.includes('--dev');
+      
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Starting password change process...');
       }
 
-      // Validate new password
-      if (!newPassword || newPassword.length < 6) {
+      // Validate inputs first
+      if (!currentPassword || typeof currentPassword !== 'string') {
+        throw new Error('Current password is required');
+      }
+
+      if (!newPassword || typeof newPassword !== 'string') {
+        throw new Error('New password is required');
+      }
+
+      if (newPassword.length < 6) {
         throw new Error('New password must be at least 6 characters long');
       }
 
       if (!/\d/.test(newPassword)) {
         throw new Error('New password must contain at least one number');
+      }
+
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Input validation passed');
+        console.log('🔑 [DEV] AuthManager: Loading auth data...');
+      }
+
+      // Load current auth data
+      const authData = await this.loadAuthData();
+      
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Auth data loaded:', !!authData);
+        console.log('🔑 [DEV] AuthManager: Auth data structure:', authData ? Object.keys(authData) : 'null');
+      }
+      
+      if (!authData) {
+        throw new Error('Could not load authentication data');
+      }
+
+      if (!authData.auth) {
+        if (isDevelopment) {
+          console.log('🔑 [DEV] AuthManager: authData.auth is missing');
+        }
+        throw new Error('Authentication system not initialized');
+      }
+
+      if (!authData.auth.adminUser) {
+        if (isDevelopment) {
+          console.log('🔑 [DEV] AuthManager: authData.auth.adminUser is missing');
+          console.log('🔑 [DEV] AuthManager: authData.auth structure:', Object.keys(authData.auth));
+        }
+        throw new Error('Admin user not found. Please complete setup first.');
+      }
+
+      const adminUser = authData.auth.adminUser;
+
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Admin user found:', !!adminUser);
+        console.log('🔑 [DEV] AuthManager: Admin user structure:', Object.keys(adminUser));
+        console.log('🔑 [DEV] AuthManager: Password hash exists:', !!adminUser.passwordHash);
+      }
+
+      if (!adminUser.passwordHash) {
+        throw new Error('Admin user password not found');
+      }
+
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Verifying current password...');
+      }
+
+      // Verify current password using bcryptjs (synchronous method)
+      const passwordMatch = bcrypt.compareSync(currentPassword, adminUser.passwordHash);
+      
+      if (isDevelopment) {
+        console.log('🔑 [DEV] AuthManager: Password match result:', passwordMatch);
+      }
+      
+      if (!passwordMatch) {
+        throw new Error('Current password is incorrect');
       }
 
       // Hash new password using bcryptjs (synchronous method)
@@ -445,6 +508,7 @@ class AuthManager {
       adminUser.passwordHash = newPasswordHash;
       adminUser.passwordChangedAt = new Date().toISOString();
 
+      // Save updated auth data
       await this.saveAuthData(authData);
 
       return {

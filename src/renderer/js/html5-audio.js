@@ -16,8 +16,7 @@
 
     async playAudio(filename) {
       try {
-        console.log('HTML5 playAudio called with:', filename);
-        
+          
         // Stop any currently playing audio
         await this.stopAudio();
 
@@ -30,11 +29,9 @@
         this.audio.volume = this.volume / 100;
         this.audio.preload = 'auto';
         
-        console.log('HTML5 audio volume set to:', this.audio.volume);
 
         // Create file URL from the audio directory
         const audioUrl = await this.getAudioFileUrl(filename);
-        console.log('HTML5 audio URL:', audioUrl.substring(0, 100) + '...');
         this.audio.src = audioUrl;
 
         // Set up event listeners
@@ -50,16 +47,8 @@
 
           const onCanPlay = async () => {
             try {
-              console.log('HTML5 audio canplaythrough - attempting to play...');
-              console.log('Audio properties:', {
-                duration: this.audio.duration,
-                volume: this.audio.volume,
-                muted: this.audio.muted,
-                paused: this.audio.paused
-              });
               
               await this.audio.play();
-              console.log('HTML5 audio.play() succeeded');
               cleanup();
               resolve({ success: true, filename });
             } catch (playError) {
@@ -84,8 +73,7 @@
           };
 
           const onLoadStart = () => {
-            console.log('HTML5 audio loading started for:', filename);
-          };
+              };
 
           this.audio.addEventListener('canplaythrough', onCanPlay, { once: true });
           this.audio.addEventListener('error', onError, { once: true });
@@ -149,7 +137,6 @@
       this.onAudioEnded = () => {
         this.isPlaying = false;
         this.currentFile = null;
-        console.log('Audio playback completed');
       };
 
       this.onAudioError = (e) => {
@@ -237,28 +224,27 @@
 
     async playAudioSequence(audioSequence) {
       try {
-        console.log('Playing HTML5 audio sequence:', audioSequence);
-        
         for (const item of audioSequence) {
           const filename = item.audioFile;
           const repeatCount = item.repeat || 1;
           
           for (let i = 0; i < repeatCount; i++) {
-            console.log(`Playing ${filename} (${i + 1}/${repeatCount})`);
             await this.playAudio(filename);
             
             // Wait for audio to complete
             await this.waitForCompletion();
             
-            // Add a small delay between repetitions (except for the last one)
+            // Add a configurable delay between repetitions (except for the last one)
             if (i < repeatCount - 1) {
-              await this.delay(500); // 500ms delay between repetitions
+              const settings = await window.electronAPI.getSettings();
+              const audioRepeatInterval = (settings.audioRepeatInterval || 3) * 1000; // Convert to milliseconds
+              await this.delay(audioRepeatInterval);
             }
           }
           
           // Add a small delay between different audio files
           if (audioSequence.indexOf(item) < audioSequence.length - 1) {
-            await this.delay(1000); // 1 second delay between different files
+            await this.delay(2000); // 1 second delay between different files
           }
         }
         
