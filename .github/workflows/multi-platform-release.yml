@@ -1,0 +1,179 @@
+name: Multi-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows
+            arch: x64
+          - os: macos-12
+            platform: macos
+            arch: universal
+          - os: ubuntu-20.04
+            platform: linux
+            arch: x64
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          
+      - name: Install dependencies
+        run: npm install --no-optional
+        
+      - name: Install electron-builder
+        run: npm install electron-builder --save-dev
+        
+      # Platform-specific preparations
+      - name: Prepare macOS
+        if: matrix.platform == 'macos'
+        run: |
+          # Set up macOS build environment
+          export CSC_IDENTITY_AUTO_DISCOVERY=false
+          
+      - name: Prepare Linux
+        if: matrix.platform == 'linux'
+        run: |
+          # Install Linux dependencies
+          sudo apt-get update
+          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libxss1 libasound2-dev
+          
+      # Build for specific platforms
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        run: npx electron-builder --mac --universal
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          APPLE_ID: ""
+          APPLE_ID_PASS: ""
+          
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      # Upload platform-specific artifacts
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-installer
+          path: dist/*.dmg
+          
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-installers
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-20.04
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+          
+      - name: Display artifacts
+        run: find artifacts -type f -name "*" | head -20
+        
+      - name: Create Multi-Platform Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: School Bell System ${{ github.ref_name }} - Multi-Platform
+          body: |
+            ## 🎵 School Bell System ${{ github.ref_name }} - All Platforms
+            
+            ### 🔒 MAJOR UPDATE: Audio File Persistence
+            **Your audio files will now survive app updates on all platforms!**
+            
+            ### 📦 Download for Your Platform
+            
+            #### Windows 10/11 (64-bit)
+            - Download: `School Bell System Setup ${{ github.ref_name }}.exe`
+            - Features: Auto-updater, NSIS installer, system tray
+            
+            #### macOS (Intel & Apple Silicon)
+            - Download: `School Bell System-${{ github.ref_name }}.dmg`
+            - Features: Universal binary, auto-updater, native integration
+            - Requires: macOS 10.13 or later
+            
+            #### Linux (Ubuntu/Debian & Others)
+            - **Portable**: `School Bell System-${{ github.ref_name }}.AppImage` (run anywhere)
+            - **Package**: `school-bell-system_${{ github.ref_name }}_amd64.deb` (Ubuntu/Debian)
+            - Features: Auto-updater, system integration
+            
+            ### ✅ What's Fixed & Improved
+            - 🔒 **Audio persistence**: Files stored in user data directory
+            - 🔄 **Automatic migration**: Old files moved to safe location
+            - ⚙️ **Configurable intervals**: 0-30 second repeat delays
+            - 🔧 **Better UI**: Improved password change interface
+            - 📢 **User notifications**: Migration and status updates
+            - 🛠️ **Enhanced errors**: Better error handling and feedback
+            
+            ### 📋 Installation Instructions
+            
+            **Windows**: Run the `.exe` installer as Administrator
+            **macOS**: Open the `.dmg` and drag to Applications folder
+            **Linux**: Make `.AppImage` executable or install `.deb` package
+            
+            ### 🔄 Automatic Updates
+            All versions include auto-updater functionality:
+            - Checks GitHub releases every 4 hours
+            - Downloads updates in background
+            - Installs on next app restart
+            - Preserves all your data and settings
+            
+            ---
+            🔔 **Finally, a cross-platform school bell system where your files persist forever!**
+          files: |
+            artifacts/windows-installer/*.exe
+            artifacts/macos-installer/*.dmg
+            artifacts/linux-installers/*.AppImage
+            artifacts/linux-installers/*.deb
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

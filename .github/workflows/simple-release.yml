@@ -1,9 +1,7 @@
-name: Simple Windows Release
+name: Simple Windows Release (DISABLED)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Disabled - using multi-platform-release.yml instead
   workflow_dispatch:
 
 permissions:
