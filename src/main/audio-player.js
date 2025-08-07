@@ -20,7 +20,7 @@ class AudioPlayer {
     const settings = this.dataManager.getSettings();
     this.volume = settings.volume || 80;
     
-    const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+    const audioPath = settings.audioPath || path.join(require('electron').app.getPath('userData'), 'audio');
     await fs.mkdir(audioPath, { recursive: true });
     
     this.isInitialized = true;
@@ -37,7 +37,7 @@ class AudioPlayer {
       await this.stopAllAudio();
       
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(require('electron').app.getPath('userData'), 'audio');
       const filePath = path.join(audioPath, filename);
       
       await fs.access(filePath);
@@ -102,7 +102,7 @@ class AudioPlayer {
   async playAudioFallback(filename) {
     try {
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(require('electron').app.getPath('userData'), 'audio');
       const filePath = path.join(audioPath, filename);
       
       this.currentProcess = spawn('powershell', [
@@ -254,7 +254,9 @@ class AudioPlayer {
           await this.playAudio(audioItem.audioFile);
           
           if (i < repeat - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const settings = this.dataManager.getSettings();
+            const audioRepeatInterval = (settings.audioRepeatInterval || 3) * 1000; // Convert to milliseconds
+            await new Promise(resolve => setTimeout(resolve, audioRepeatInterval));
           }
         }
       }
@@ -288,7 +290,7 @@ class AudioPlayer {
   async getAvailableAudioFiles() {
     try {
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(require('electron').app.getPath('userData'), 'audio');
       
       const files = await fs.readdir(audioPath);
       const audioExtensions = ['.mp3', '.wav', '.m4a', '.ogg', '.aac'];

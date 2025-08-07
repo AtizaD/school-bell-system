@@ -22,7 +22,8 @@ class DataManager {
       templates: [],
       settings: {
         volume: 80,
-        audioPath: path.join(process.cwd(), 'audio'),
+        audioPath: path.join(app.getPath('userData'), 'audio'),
+        audioRepeatInterval: 3,
         logLevel: 'info',
         autoStart: true,
         maxLogEntries: 1000
@@ -39,7 +40,8 @@ class DataManager {
   async initialize() {
     try {
       await this.loadData();
-      return true;
+      const migrationResult = await this.ensureAudioDirectorySetup();
+      return { success: true, migrationResult };
     } catch (error) {
       throw error;
     }
@@ -563,6 +565,100 @@ class DataManager {
       return true;
     } catch (error) {
       throw error;
+    }
+  }
+
+  /**
+   * Ensure audio directory is properly set up in userData and migrate existing files
+   */
+  async ensureAudioDirectorySetup() {
+    try {
+      const settings = this.getSettings();
+      const userDataAudioPath = path.join(app.getPath('userData'), 'audio');
+      const installAudioPath = path.join(process.cwd(), 'audio');
+      let migrationInfo = { migrated: false, fileCount: 0 };
+      
+      // Create userData audio directory if it doesn't exist
+      await fs.mkdir(userDataAudioPath, { recursive: true });
+      
+      // Check if settings still point to installation directory
+      if (settings.audioPath && settings.audioPath.includes(process.cwd())) {
+        console.log('🔄 Migrating audio path from installation directory to userData');
+        
+        // Update settings to use userData directory
+        await this.updateSettings({ audioPath: userDataAudioPath });
+        
+        // Migrate audio files from installation directory if they exist
+        const migratedCount = await this.migrateAudioFiles(installAudioPath, userDataAudioPath);
+        
+        migrationInfo = { migrated: true, fileCount: migratedCount };
+        this.logActivitySafe('audio_migration', 'Audio files migrated to userData directory');
+      } else if (!settings.audioPath || settings.audioPath === '') {
+        // Set default path if not set
+        await this.updateSettings({ audioPath: userDataAudioPath });
+        console.log('📁 Set default audio path to userData directory');
+      }
+
+      // Ensure the current audio path exists
+      if (settings.audioPath && !(await this.fileExists(settings.audioPath))) {
+        await fs.mkdir(settings.audioPath, { recursive: true });
+      }
+      
+      return migrationInfo;
+    } catch (error) {
+      console.error('Failed to setup audio directory:', error);
+      // Don't throw - this is not critical for app startup
+      return { migrated: false, fileCount: 0, error: error.message };
+    }
+  }
+
+  /**
+   * Migrate audio files from old location to new location
+   */
+  async migrateAudioFiles(sourcePath, targetPath) {
+    try {
+      // Check if source directory exists
+      if (!(await this.fileExists(sourcePath))) {
+        console.log('📂 No installation audio directory to migrate from');
+        return;
+      }
+
+      const sourceFiles = await fs.readdir(sourcePath, { withFileTypes: true });
+      let migratedCount = 0;
+
+      for (const file of sourceFiles) {
+        if (file.isFile()) {
+          const sourceFile = path.join(sourcePath, file.name);
+          const targetFile = path.join(targetPath, file.name);
+          
+          try {
+            // Check if file already exists in target
+            if (await this.fileExists(targetFile)) {
+              console.log(`⏭️  Skipping ${file.name} - already exists in userData`);
+              continue;
+            }
+
+            // Copy file to userData directory
+            await fs.copyFile(sourceFile, targetFile);
+            migratedCount++;
+            console.log(`✅ Migrated: ${file.name}`);
+            
+          } catch (fileError) {
+            console.warn(`⚠️  Failed to migrate ${file.name}:`, fileError.message);
+          }
+        }
+      }
+
+      if (migratedCount > 0) {
+        console.log(`🎵 Successfully migrated ${migratedCount} audio files to userData directory`);
+        this.logActivitySafe('audio_files_migrated', `Migrated ${migratedCount} audio files from installation directory`);
+      }
+
+      return migratedCount;
+    } catch (error) {
+      console.warn('Audio migration failed:', error.message);
+      // Non-critical error - don't throw
+      return 0;
     }
   }
 }

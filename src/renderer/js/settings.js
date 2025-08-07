@@ -23,7 +23,6 @@ function extendAppWithSettingsMethods(app) {
    */
   app.updateSettings = async function() {
     try {
-      console.log('Updating settings view...');
       await this.loadData();
       this.populateSettingsForm();
       this.setupSettingsEventListeners();
@@ -37,7 +36,6 @@ function extendAppWithSettingsMethods(app) {
    */
   app.populateSettingsForm = function() {
     const settings = this.data?.settings || {};
-    console.log('Populating settings form with:', settings);
     
     // Volume settings
     const volumeSlider = document.getElementById('volumeSlider');
@@ -45,14 +43,18 @@ function extendAppWithSettingsMethods(app) {
     if (volumeSlider && volumeValue) {
       volumeSlider.value = settings.volume || 80;
       volumeValue.textContent = `${settings.volume || 80}%`;
-      console.log('Set volume slider to:', settings.volume);
     }
     
     // Audio path
     const audioPath = document.getElementById('audioPath');
     if (audioPath) {
       audioPath.value = settings.audioPath || '';
-      console.log('Set audio path to:', settings.audioPath);
+    }
+
+    // Audio repeat interval
+    const audioRepeatInterval = document.getElementById('audioRepeatInterval');
+    if (audioRepeatInterval) {
+      audioRepeatInterval.value = settings.audioRepeatInterval || 3;
     }
     
     // Auto start
@@ -72,15 +74,25 @@ function extendAppWithSettingsMethods(app) {
     if (maxLogEntries) {
       maxLogEntries.value = settings.maxLogEntries || 1000;
     }
-    
-    console.log('Settings form populated with current values');
   };
 
   /**
    * Set up settings event listeners
    */
-  app.setupSettingsEventListeners = function() {
-    console.log('Setting up settings event listeners...');
+  app.setupSettingsEventListeners = async function() {
+    
+    // Show password change in production mode, hide in development mode  
+    try {
+      const isDevelopment = await window.electronAPI.isDevelopment();
+      const changePasswordBtn = document.getElementById('changePasswordBtn');
+      const securityGroup = changePasswordBtn?.closest('.settings-group');
+      
+      if (isDevelopment && securityGroup) {
+        securityGroup.style.display = 'none';
+      }
+    } catch (error) {
+      console.warn('Failed to check development mode for security settings:', error);
+    }
     
     // Volume slider
     const volumeSlider = document.getElementById('volumeSlider');
@@ -115,6 +127,13 @@ function extendAppWithSettingsMethods(app) {
       maxLogEntries.addEventListener('change', (e) => this.handleMaxLogEntriesChange(e));
     }
     
+    // Audio repeat interval
+    const audioRepeatInterval = document.getElementById('audioRepeatInterval');
+    if (audioRepeatInterval) {
+      audioRepeatInterval.removeEventListener('change', this.handleAudioRepeatIntervalChange);
+      audioRepeatInterval.addEventListener('change', (e) => this.handleAudioRepeatIntervalChange(e));
+    }
+
     // Change audio path button
     const changePathBtn = document.getElementById('changePathBtn');
     if (changePathBtn) {
@@ -122,6 +141,20 @@ function extendAppWithSettingsMethods(app) {
       changePathBtn.addEventListener('click', () => this.handleChangeAudioPath());
     }
     
+    // Security buttons
+    const changePasswordBtn = document.getElementById('changePasswordBtn');
+    if (changePasswordBtn) {
+      changePasswordBtn.removeEventListener('click', this.handleChangePassword);
+      changePasswordBtn.addEventListener('click', () => this.handleChangePassword());
+    }
+
+    // Application control buttons
+    const restartAppBtn = document.getElementById('restartAppBtn');
+    if (restartAppBtn) {
+      restartAppBtn.removeEventListener('click', this.handleRestartApp);
+      restartAppBtn.addEventListener('click', () => this.handleRestartApp());
+    }
+
     // Data management buttons
     const exportDataBtn = document.getElementById('exportDataBtn');
     const importDataBtn = document.getElementById('importDataBtn');
@@ -142,7 +175,6 @@ function extendAppWithSettingsMethods(app) {
       resetDataBtn.addEventListener('click', () => this.handleResetData());
     }
     
-    console.log('Settings event listeners configured');
   };
 
   /**
@@ -293,6 +325,190 @@ function extendAppWithSettingsMethods(app) {
   };
 
   /**
+   * Handle audio repeat interval changes
+   */
+  app.handleAudioRepeatIntervalChange = async function(e) {
+    const interval = parseFloat(e.target.value);
+    
+    if (isNaN(interval) || interval < 0 || interval > 30) {
+      this.showNotification('Audio repeat interval must be between 0 and 30 seconds', 'error');
+      e.target.value = this.data?.settings?.audioRepeatInterval || 3;
+      return;
+    }
+
+    try {
+      await window.electronAPI.updateSettings({ audioRepeatInterval: interval });
+      this.showNotification(`Audio repeat interval set to ${interval} seconds`, 'success');
+      console.log('Audio repeat interval updated:', interval);
+      
+    } catch (error) {
+      console.error('Failed to update audio repeat interval:', error);
+      this.showNotification('Failed to update audio repeat interval', 'error');
+    }
+  };
+
+  /**
+   * Handle change password button
+   */
+  app.handleChangePassword = async function() {
+    const modalContent = `
+      <div class="change-password-modal">
+        <div class="password-change-header">
+          <div class="password-icon">🔑</div>
+          <h3>Change Password</h3>
+          <p>Enter your current and new password</p>
+        </div>
+        
+        <form id="changePasswordForm" class="password-change-form">
+          <div class="form-group">
+            <label for="currentPasswordInput">Current Password</label>
+            <input type="password" id="currentPasswordInput" placeholder="Enter current password" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="newPasswordInput">New Password</label>
+            <input type="password" id="newPasswordInput" placeholder="Enter new password" required minlength="6">
+            <div class="form-help">At least 6 characters with numbers</div>
+          </div>
+          
+          <div class="form-group">
+            <label for="confirmPasswordInput">Confirm New Password</label>
+            <input type="password" id="confirmPasswordInput" placeholder="Confirm new password" required>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const buttons = [
+      {
+        text: 'Cancel',
+        class: 'btn btn-secondary',
+        onclick: () => this.closeModal()
+      },
+      {
+        text: 'Change Password',
+        class: 'btn btn-primary',
+        onclick: () => this.processPasswordChange()
+      }
+    ];
+
+    this.showModal('Change Password', modalContent, buttons, true, 'auth-modal');
+    
+    setTimeout(() => {
+      document.getElementById('currentPasswordInput').focus();
+      this.setupPasswordChangeFormHandlers();
+    }, 100);
+  };
+
+  /**
+   * Setup password change form handlers
+   */
+  app.setupPasswordChangeFormHandlers = function() {
+    const form = document.getElementById('changePasswordForm');
+    const currentPassword = document.getElementById('currentPasswordInput');
+    const newPassword = document.getElementById('newPasswordInput');
+    const confirmPassword = document.getElementById('confirmPasswordInput');
+
+    // Handle Enter key presses
+    [currentPassword, newPassword, confirmPassword].forEach(input => {
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.processPasswordChange();
+        }
+      });
+    });
+
+    // Real-time password confirmation validation
+    const validatePasswords = () => {
+      if (newPassword.value && confirmPassword.value) {
+        if (newPassword.value === confirmPassword.value) {
+          confirmPassword.setCustomValidity('');
+          confirmPassword.classList.remove('error');
+        } else {
+          confirmPassword.setCustomValidity('Passwords do not match');
+          confirmPassword.classList.add('error');
+        }
+      }
+    };
+
+    newPassword.addEventListener('input', validatePasswords);
+    confirmPassword.addEventListener('input', validatePasswords);
+  };
+
+  /**
+   * Process password change
+   */
+  app.processPasswordChange = async function() {
+    try {
+      const currentPassword = document.getElementById('currentPasswordInput').value;
+      const newPassword = document.getElementById('newPasswordInput').value;
+      const confirmPassword = document.getElementById('confirmPasswordInput').value;
+
+      // Validate inputs
+      if (!currentPassword) {
+        this.showNotification('Please enter your current password', 'error');
+        document.getElementById('currentPasswordInput').focus();
+        return;
+      }
+
+      if (!newPassword) {
+        this.showNotification('Please enter a new password', 'error');
+        document.getElementById('newPasswordInput').focus();
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        this.showNotification('New passwords do not match', 'error');
+        document.getElementById('confirmPasswordInput').focus();
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        this.showNotification('New password must be at least 6 characters long', 'error');
+        document.getElementById('newPasswordInput').focus();
+        return;
+      }
+
+      if (!/\d/.test(newPassword)) {
+        this.showNotification('New password must contain at least one number', 'error');
+        document.getElementById('newPasswordInput').focus();
+        return;
+      }
+
+      const result = await window.electronAPI.changePassword(currentPassword, newPassword);
+      
+      if (result.success) {
+        this.closeModal();
+        this.showNotification('Password changed successfully', 'success');
+      } else {
+        this.showNotification(result.error || 'Failed to change password. Please check your current password.', 'error');
+      }
+      
+    } catch (error) {
+      console.error('Failed to change password:', error);
+      this.showNotification('Failed to change password. Please try again.', 'error');
+    }
+  };
+
+  /**
+   * Handle restart application button
+   */
+  app.handleRestartApp = async function() {
+    const confirmed = confirm('This will restart the application and stop all scheduled events. Are you sure?');
+    if (!confirmed) return;
+    
+    try {
+      this.showNotification('Restarting application...', 'info');
+      await window.electronAPI.restartApp();
+      
+    } catch (error) {
+      console.error('Failed to restart application:', error);
+      this.showNotification('Failed to restart application', 'error');
+    }
+  };
+
+  /**
    * Handle change audio path button
    */
   app.handleChangeAudioPath = async function() {
@@ -394,7 +610,7 @@ function extendAppWithSettingsMethods(app) {
       // Clear all data sections
       await window.electronAPI.updateSettings({
         volume: 80,
-        audioPath: '',
+        audioPath: '', // Will be set to userData/audio by data manager
         logLevel: 'info',
         autoStart: true,
         maxLogEntries: 1000
@@ -440,7 +656,8 @@ function extendAppWithSettingsMethods(app) {
   app.getCurrentSettingsFromForm = function() {
     return {
       volume: parseInt(document.getElementById('volumeSlider')?.value || 80),
-      audioPath: document.getElementById('audioPath')?.value || '',
+      audioPath: document.getElementById('audioPath')?.value || '', // DataManager will set to userData/audio if empty
+      audioRepeatInterval: parseFloat(document.getElementById('audioRepeatInterval')?.value || 3),
       autoStart: document.getElementById('autoStartCheckbox')?.checked || false,
       logLevel: document.getElementById('logLevel')?.value || 'info',
       maxLogEntries: parseInt(document.getElementById('maxLogEntries')?.value || 1000)
@@ -457,6 +674,11 @@ function extendAppWithSettingsMethods(app) {
     if (isNaN(volume) || volume < 0 || volume > 100) {
       errors.push({ field: 'volumeSlider', message: 'Volume must be between 0 and 100' });
     }
+
+    const audioRepeatInterval = parseFloat(document.getElementById('audioRepeatInterval')?.value);
+    if (isNaN(audioRepeatInterval) || audioRepeatInterval < 0 || audioRepeatInterval > 30) {
+      errors.push({ field: 'audioRepeatInterval', message: 'Audio repeat interval must be between 0 and 30 seconds' });
+    }
     
     const maxLogEntries = parseInt(document.getElementById('maxLogEntries')?.value);
     if (isNaN(maxLogEntries) || maxLogEntries < 100 || maxLogEntries > 10000) {
@@ -472,7 +694,8 @@ function extendAppWithSettingsMethods(app) {
   app.resetSettingsToDefaults = function() {
     const defaultSettings = {
       volume: 80,
-      audioPath: '',
+      audioPath: '', // Will be set to userData/audio by data manager
+      audioRepeatInterval: 3,
       autoStart: true,
       logLevel: 'info',
       maxLogEntries: 1000
@@ -489,6 +712,11 @@ function extendAppWithSettingsMethods(app) {
     const audioPath = document.getElementById('audioPath');
     if (audioPath) {
       audioPath.value = defaultSettings.audioPath;
+    }
+
+    const audioRepeatInterval = document.getElementById('audioRepeatInterval');
+    if (audioRepeatInterval) {
+      audioRepeatInterval.value = defaultSettings.audioRepeatInterval;
     }
     
     const autoStart = document.getElementById('autoStartCheckbox');
@@ -542,7 +770,6 @@ function extendAppWithSettingsMethods(app) {
     this.showModal('Settings Help', helpContent);
   };
 
-  console.log('Settings management methods loaded');
 }
 
 // Add enhanced settings styling
@@ -618,6 +845,33 @@ document.addEventListener('DOMContentLoaded', () => {
       border-radius: 8px;
       border: 2px solid #e9ecef;
     }
+
+    .interval-control {
+      background: #f8f9fa;
+      padding: 0.75rem;
+      border-radius: 8px;
+      border: 2px solid #e9ecef;
+      transition: border-color 0.3s ease;
+    }
+
+    .interval-control:hover {
+      border-color: #667eea;
+    }
+
+    .interval-control input {
+      width: 80px;
+      margin-right: 1rem;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+      text-align: center;
+    }
+
+    .interval-help {
+      font-size: 0.85rem;
+      color: #6c757d;
+      font-style: italic;
+    }
     
     .setting-actions {
       display: flex;
@@ -632,6 +886,52 @@ document.addEventListener('DOMContentLoaded', () => {
     
     .setting-actions .btn {
       min-width: 140px;
+    }
+
+    /* Password Change Modal Styles */
+    .change-password-modal {
+      max-width: 380px;
+      text-align: center;
+    }
+
+    .password-change-header {
+      margin-bottom: 1rem;
+    }
+
+    .password-change-header h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .password-change-header p {
+      font-size: 0.9rem;
+      margin: 0;
+      color: #6c757d;
+    }
+
+    .password-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .password-change-form {
+      text-align: left;
+      margin: 0.75rem 0;
+    }
+
+    .password-change-form .form-group {
+      margin-bottom: 0.75rem;
+    }
+
+    .password-change-form .form-group input.error {
+      border-color: #dc3545;
+      box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+    }
+
+    .password-change-form .form-help {
+      font-size: 0.8rem;
+      color: #6c757d;
+      margin-top: 0.25rem;
     }
   `;
   document.head.appendChild(settingsStyles);

@@ -143,7 +143,17 @@ class SchoolBellApp {
 
     // Data Manager
     this.dataManager = new DataManager();
-    await this.dataManager.initialize();
+    const initResult = await this.dataManager.initialize();
+    
+    // Show migration notification if files were migrated
+    if (initResult.migrationResult && initResult.migrationResult.migrated && initResult.migrationResult.fileCount > 0) {
+      console.log(`🎵 Audio migration completed: ${initResult.migrationResult.fileCount} files moved to persistent storage`);
+      
+      // Show notification after tray is set up
+      setTimeout(() => {
+        this.showMigrationNotification(initResult.migrationResult.fileCount);
+      }, 2000);
+    }
 
     // Audio Player
     this.audioPlayer = new AudioPlayer(this.dataManager);
@@ -429,6 +439,22 @@ class SchoolBellApp {
       }
     } catch (error) {
       console.warn('Failed to show notification:', error.message);
+    }
+  }
+
+  /**
+   * Show migration notification to user
+   */
+  showMigrationNotification(fileCount) {
+    try {
+      const title = '🎵 Audio Files Migrated';
+      const body = `${fileCount} audio files have been moved to persistent storage. They will now survive app updates!`;
+      
+      this.showTrayNotification(title, body);
+      console.log(`Migration notification shown: ${fileCount} files migrated`);
+      
+    } catch (error) {
+      console.warn('Failed to show migration notification:', error.message);
     }
   }
 
@@ -1231,7 +1257,7 @@ class SchoolBellApp {
       if (audioFile) {
         try {
           const settings = this.dataManager.getSettings();
-          const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+          const audioPath = settings.audioPath || path.join(app.getPath('userData'), 'audio');
           const filePath = path.join(audioPath, audioFile.filename);
           await fs.unlink(filePath);
         } catch (fileError) {
@@ -1244,7 +1270,7 @@ class SchoolBellApp {
     ipcMain.handle('audio-bulk-delete', async (event, audioIds) => {
       const audioFiles = this.dataManager.getAudioFiles();
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(app.getPath('userData'), 'audio');
       
       let deletedCount = 0;
       let errors = [];
@@ -1304,7 +1330,7 @@ class SchoolBellApp {
     ipcMain.handle('upload-audio-file', async (event, fileData) => {
       const { filename, buffer, displayName } = fileData;
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(app.getPath('userData'), 'audio');
       
       await fs.mkdir(audioPath, { recursive: true });
       
@@ -1458,7 +1484,7 @@ class SchoolBellApp {
 
     ipcMain.handle('audio-get-file-url', async (event, filename) => {
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(app.getPath('userData'), 'audio');
       const filePath = path.join(audioPath, filename);
       
       try {
@@ -1489,7 +1515,7 @@ class SchoolBellApp {
 
     ipcMain.handle('audio-get-file-path', async (event, filename) => {
       const settings = this.dataManager.getSettings();
-      const audioPath = settings.audioPath || path.join(process.cwd(), 'audio');
+      const audioPath = settings.audioPath || path.join(app.getPath('userData'), 'audio');
       const filePath = path.join(audioPath, filename);
       
       try {
@@ -1583,11 +1609,35 @@ class SchoolBellApp {
     });
 
     ipcMain.handle('auth-change-password', async (event, currentPassword, newPassword) => {
-      const result = await this.authManager.changePassword(currentPassword, newPassword);
-      if (result.success) {
-        this.dataManager.logActivitySafe('password_changed', 'Admin password changed');
+      try {
+        if (this.isDevelopment) {
+          console.log('🔑 [DEV] Password change request received');
+          console.log('🔑 [DEV] Current password provided:', !!currentPassword);
+          console.log('🔑 [DEV] New password provided:', !!newPassword);
+        }
+        
+        const result = await this.authManager.changePassword(currentPassword, newPassword);
+        
+        if (this.isDevelopment) {
+          console.log('🔑 [DEV] Password change result:', result);
+        }
+        
+        if (result.success) {
+          this.dataManager.logActivitySafe('password_changed', 'Admin password changed successfully');
+        }
+        return result;
+      } catch (error) {
+        if (this.isDevelopment) {
+          console.error('🔑 [DEV] Password change error details:', error);
+          console.error('🔑 [DEV] Error stack:', error.stack);
+        } else {
+          console.error('Password change failed:', error.message);
+        }
+        return {
+          success: false,
+          error: error.message || 'Failed to change password'
+        };
       }
-      return result;
     });
 
     // System operations
