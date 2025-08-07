@@ -1,4 +1,4 @@
-# School Bell System v1.0.0 - Initial Release
+# School Bell System v1.0.1 - Audio Persistence Update
 
 🔔 **Automated school bell scheduling system with audio playback and authentication**
 
@@ -12,9 +12,11 @@
 
 ### 🎵 **Audio Management** 
 - Upload and manage audio files (MP3, WAV, M4A, OGG, AAC)
-- Audio sequence builder with repeat options
+- **🔒 Persistent audio storage** - Files survive app updates
+- Audio sequence builder with configurable repeat intervals
 - Volume control and audio testing
 - Support for multiple audio files per event
+- Automatic migration from installation directory
 
 ### 🔐 **Security & Authentication**
 - Secure admin authentication with encrypted storage
@@ -42,11 +44,13 @@
 - 100MB free disk space
 
 ### **Quick Start**
-1. Download `School Bell System Setup 1.0.0.exe`
+1. Download `School Bell System Setup 1.0.1.exe`
 2. Run the installer and follow the setup wizard
 3. Launch the application
 4. Create your admin account (first time only)
 5. Upload audio files and create schedules
+
+> **📢 Note**: Audio files are now stored in persistent storage and will survive app updates!
 
 ## 📝 **First Time Setup Guide**
 
@@ -60,6 +64,7 @@
 - Drag and drop or browse for audio files
 - Supported formats: MP3, WAV, M4A, OGG, AAC
 - Test audio files before using in schedules
+- Configure repeat interval between audio files in Settings (0-30 seconds)
 
 ### **Step 3: Create Schedules**
 - Go to "Weekly Schedule"
@@ -88,12 +93,25 @@
 - No plaintext password storage
 
 ### **Audio System**
-- Native OS audio integration
+- Native OS audio integration + HTML5 Audio API
 - Platform-specific audio players (Windows Media Player, macOS afplay, Linux paplay)
+- **Persistent storage in userData directory** - survives app updates
 - Volume control and audio testing
+- **Configurable repeat intervals** between audio files (0-30 seconds)
 - Multiple format support with automatic detection
+- **Automatic migration** from old storage locations
 
-## 📊 **What's New in v1.0.0**
+## 📊 **What's New**
+
+### **v1.0.1 - Audio Persistence Update**
+- 🔒 **Fixed audio file persistence** - Files now survive app updates
+- 🔄 **Automatic migration** from installation directory to persistent storage
+- ⚙️ **Configurable repeat intervals** between audio files (0-30 seconds)
+- 🔧 **Improved password change UI** with proper modal dialogs
+- 📢 **User notifications** when audio files are migrated
+- 🛠️ **Enhanced error handling** and user feedback
+
+### **v1.0.0 - Initial Release**
 - ✨ Initial release with full feature set
 - 🔐 Complete authentication system
 - 🎵 Audio management and playback
@@ -102,7 +120,7 @@
 - 📝 Activity logging and monitoring
 
 ## 🐛 **Known Issues**
-- None reported for initial release
+- Manual installations previously cleared audio files ✅ **FIXED in v1.0.1**
 
 ## 💡 **Support & Feedback**
 - Report issues: [GitHub Issues](https://github.com/AtizaD/school-bell-system/issues)
