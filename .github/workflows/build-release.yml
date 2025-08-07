@@ -1,9 +1,7 @@
-name: Build and Release
+name: Build and Release (DISABLED)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Temporarily disabled - using simple-release.yml instead
   workflow_dispatch:
     inputs:
       version:

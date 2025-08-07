@@ -79,7 +79,7 @@
         ]
       },
       {
-        "from": "build/tray-icon.png",
+        "from": "build/tray-icon.png", 
         "to": "tray-icon.png"
       }
     ],
@@ -92,7 +92,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
+      "icon": "src/renderer/assets/icons/icon.ico",
       "verifyUpdateCodeSignature": false
     },
     "mac": {
@@ -105,7 +105,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
+      "icon": "src/renderer/assets/icons/icon.ico",
       "category": "public.app-category.education"
     },
     "linux": {
@@ -123,7 +123,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
+      "icon": "src/renderer/assets/icons/icon.ico",
       "category": "Education"
     },
     "nsis": {

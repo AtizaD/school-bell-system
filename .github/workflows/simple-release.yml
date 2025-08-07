@@ -1,0 +1,70 @@
+name: Simple Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          
+      - name: Install dependencies
+        run: |
+          npm install --no-optional
+          npm install electron-builder --save-dev
+        
+      - name: Build Windows app
+        run: |
+          npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          
+      - name: Create Release
+        uses: ncipollo/create-release@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: School Bell System ${{ github.ref_name }}
+          body: |
+            ## 🎵 School Bell System ${{ github.ref_name }} - Windows Release
+            
+            ### 🔒 MAJOR FIX: Audio File Persistence
+            **Your audio files will now survive app updates!** This was the most requested fix.
+            
+            ### 📦 Download
+            - **Windows 10/11 (64-bit)**: Download the `.exe` installer below
+            - **Auto-updater enabled**: Future updates will be automatic
+            
+            ### ✅ What's Fixed
+            - Audio files no longer disappear during manual installations
+            - Files are now stored in persistent user data directory
+            - Automatic migration from old storage location
+            - User notification when migration occurs
+            
+            ### ⚙️ New Features
+            - Configurable repeat intervals between audio files (0-30 seconds)
+            - Improved password change interface
+            - Enhanced error handling and user feedback
+            
+            ### 📋 Installation
+            1. Download `School Bell System Setup ${{ github.ref_name }}.exe`
+            2. Run installer as Administrator
+            3. Your existing audio files will be automatically migrated
+            4. Continue using the app as before - your files are now safe!
+            
+            ---
+            🔔 **Finally, a school bell system where your audio files persist through updates!**
+          artifacts: "dist\\*.exe"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false

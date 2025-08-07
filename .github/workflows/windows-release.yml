@@ -1,9 +1,7 @@
-name: Windows Release
+name: Windows Release (DISABLED)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Disabled - using simple-release.yml instead  
   workflow_dispatch:
 
 jobs:
