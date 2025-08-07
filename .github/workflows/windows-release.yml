@@ -1,0 +1,71 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Build Windows application
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          
+      - name: Create Windows Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: School Bell System ${{ github.ref_name }} (Windows)
+          body: |
+            ## 🎵 School Bell System ${{ github.ref_name }} - Windows Release
+            
+            ### 🔒 Audio File Persistence Fix
+            This version includes the major fix for audio file persistence - your audio files will now survive app updates!
+            
+            ### 📦 Windows Download
+            - Download the `.exe` installer below
+            - Compatible with Windows 10/11 (64-bit)
+            - Includes auto-updater functionality
+            
+            ### 🔧 Key Improvements
+            - ✅ Fixed audio files being cleared during manual installations
+            - ⚙️ Configurable repeat intervals between audio files (0-30 seconds)
+            - 🔧 Improved password change UI with proper modal dialogs
+            - 📢 User notifications when audio files are migrated
+            - 🛠️ Enhanced error handling and user feedback
+            
+            ### 📋 Installation
+            1. Download `School Bell System Setup ${{ github.ref_name }}.exe`
+            2. Run the installer and follow the setup wizard
+            3. Your existing audio files will be automatically migrated to persistent storage
+            
+            ---
+            *🔔 Automated school bell scheduling with persistent audio storage!*
+          files: dist/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -30,12 +30,19 @@ jobs:
           cache: 'npm'
           
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         
+      - name: Install build dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Install additional macOS build tools if needed
+          npm install --save-dev dmg-builder
+          
       - name: Build application
         run: npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
           
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'
