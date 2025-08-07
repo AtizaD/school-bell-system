@@ -32,7 +32,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           
       - name: Create Release
-        uses: ncipollo/create-release@v1
+        uses: softprops/action-gh-release@v1
         with:
           tag: ${{ github.ref_name }}
           name: School Bell System ${{ github.ref_name }}
@@ -65,6 +65,7 @@ jobs:
             
             ---
             🔔 **Finally, a school bell system where your audio files persist through updates!**
-          artifacts: "dist\\*.exe"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          files: "dist/*.exe"
           draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
