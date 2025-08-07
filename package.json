@@ -38,6 +38,9 @@
     "pack": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps",
     "release": "electron-builder --publish=always",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor", 
+    "release:major": "node scripts/release.js major",
     "clean": "rimraf dist node_modules package-lock.json && npm install"
   },
   "dependencies": {

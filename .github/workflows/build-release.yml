@@ -1,0 +1,116 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.1)'
+        required: true
+        default: 'v1.0.1'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/*.dmg
+          
+      - name: Upload Linux artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          
+      - name: Display artifact structure
+        run: ls -R artifacts
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: School Bell System ${{ github.event.inputs.version || github.ref_name }}
+          body: |
+            ## 🎵 School Bell System ${{ github.event.inputs.version || github.ref_name }}
+            
+            ### 📦 Downloads
+            - **Windows**: Download the `.exe` installer
+            - **macOS**: Download the `.dmg` installer  
+            - **Linux**: Download the `.AppImage` (portable) or `.deb` (Ubuntu/Debian)
+            
+            ### 🔒 Audio File Persistence
+            This version includes the fix for audio file persistence - your audio files will now survive app updates!
+            
+            ### 📋 Installation Notes
+            - **Auto-updates**: The app will automatically check for future updates
+            - **Migration**: Existing audio files will be automatically migrated to persistent storage
+            - **Compatibility**: Works with Windows 10/11, macOS 10.13+, Ubuntu 18.04+
+            
+            ### 🐛 Bug Fixes
+            - Fixed audio files being cleared during manual installations
+            - Improved password change UI with proper modal dialogs
+            - Enhanced error handling and user feedback
+            
+            ---
+            *Download the appropriate installer for your platform and enjoy automated school bell scheduling!* 🔔
+          files: |
+            artifacts/windows-installer/*.exe
+            artifacts/macos-installer/*.dmg
+            artifacts/linux-installers/*.AppImage
+            artifacts/linux-installers/*.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
