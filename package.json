@@ -1,6 +1,6 @@
 {
   "name": "school-bell-system",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Automated school bell scheduling system with audio playback and authentication",
   "main": "src/main/main.js",
   "homepage": "https://github.com/AtizaD/school-bell-system",

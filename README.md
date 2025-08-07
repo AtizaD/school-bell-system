@@ -1,4 +1,4 @@
-# School Bell System v1.0.1 - Audio Persistence Update
+# School Bell System v1.0.2 - Multi-Platform Release
 
 🔔 **Automated school bell scheduling system with audio playback and authentication**
 
@@ -44,7 +44,7 @@
 - 100MB free disk space
 
 ### **Quick Start**
-1. Download `School Bell System Setup 1.0.1.exe`
+1. Download the installer for your platform (Windows/macOS/Linux)
 2. Run the installer and follow the setup wizard
 3. Launch the application
 4. Create your admin account (first time only)
@@ -102,6 +102,13 @@
 - **Automatic migration** from old storage locations
 
 ## 📊 **What's New**
+
+### **v1.0.2 - Multi-Platform Release**
+- 🌍 **Full cross-platform support** - Windows, macOS, and Linux builds
+- 🍎 **Universal macOS** - Works on Intel and Apple Silicon Macs
+- 🐧 **Linux options** - AppImage (portable) and DEB packages
+- 🔄 **Unified auto-updater** - Works across all platforms
+- 📦 **Professional installers** - Platform-native installation experience
 
 ### **v1.0.1 - Audio Persistence Update**
 - 🔒 **Fixed audio file persistence** - Files now survive app updates
